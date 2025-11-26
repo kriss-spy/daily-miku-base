@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+
+{% block title %}Gallery - Daily Miku{% endblock %}
+
+{% block extra_css %}
+<style>
+    .gallery-header {
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+
+    .gallery-header h2 {
+        font-size: 1.5rem;
+        color: var(--primary);
+        margin-bottom: 0.5rem;
+    }
+
+    .gallery-header p {
+        color: var(--text-muted);
+    }
+
+    .gallery-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .gallery-item {
+        background: var(--surface);
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        transition: all 0.3s;
+        cursor: pointer;
+    }
+
+    .gallery-item:hover {
+        border-color: var(--primary);
+        box-shadow: 0 10px 30px rgba(153, 69, 255, 0.2);
+        transform: translateY(-4px);
+    }
+
+    .gallery-item-image {
+        position: relative;
+        width: 100%;
+        height: 200px;
+        overflow: hidden;
+        background: linear-gradient(135deg, rgba(153, 69, 255, 0.1), rgba(236, 72, 153, 0.1));
+    }
+
+    .gallery-item-image img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: transform 0.3s;
+    }
+
+    .gallery-item:hover .gallery-item-image img {
+        transform: scale(1.05);
+    }
+
+    .gallery-item-content {
+        padding: 1rem;
+    }
+
+    .gallery-item-date {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        margin-bottom: 0.5rem;
+    }
+
+    .gallery-item-title {
+        font-size: 1rem;
+        color: var(--text);
+        margin-bottom: 0.75rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        -webkit-box-orient: vertical;
+    }
+
+    .gallery-item-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.3rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .gallery-item-tag {
+        display: inline-block;
+        background: rgba(153, 69, 255, 0.1);
+        border: 1px solid rgba(153, 69, 255, 0.3);
+        color: var(--primary);
+        padding: 0.2rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+    }
+
+    .gallery-item-link {
+        display: inline-block;
+        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        text-decoration: none;
+        transition: all 0.2s;
+        width: 100%;
+        text-align: center;
+    }
+
+    .gallery-item-link:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(153, 69, 255, 0.3);
+    }
+
+    .gallery-stats {
+        text-align: center;
+        color: var(--text-muted);
+        margin-bottom: 2rem;
+        font-size: 0.95rem;
+    }
+
+    .empty-gallery {
+        text-align: center;
+        padding: 4rem 2rem;
+        color: var(--text-muted);
+    }
+
+    .empty-gallery h3 {
+        color: var(--text);
+        margin-bottom: 1rem;
+    }
+
+    .back-link {
+        display: inline-block;
+        margin-bottom: 2rem;
+        color: var(--primary);
+        text-decoration: none;
+        font-size: 0.9rem;
+        transition: all 0.2s;
+    }
+
+    .back-link:hover {
+        color: #ec4899;
+    }
+
+    @media (max-width: 1024px) {
+        .gallery-grid {
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        }
+    }
+
+    @media (max-width: 768px) {
+        .gallery-grid {
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 1rem;
+        }
+
+        .gallery-item-image {
+            height: 150px;
+        }
+
+        .gallery-item-content {
+            padding: 0.75rem;
+        }
+
+        .gallery-item-title {
+            font-size: 0.9rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<a href="/" class="back-link">← Back to Home</a>
+
+<div class="gallery-header">
+    <h2>📸 Image Gallery</h2>
+    <p>Browse all {{ total }} Hatsune Miku artworks in our collection</p>
+</div>
+
+<div class="gallery-stats">
+    Showing {{ total }} image{{ 's' if total != 1 else '' }}
+</div>
+
+{% if images %}
+    <div class="gallery-grid">
+        {% for image in images %}
+            <a href="/{{ image.date }}" class="gallery-item" title="{{ image.title or 'Daily Miku' }}">
+                <div class="gallery-item-image">
+                    {% if image.cover %}
+                        <img src="{{ image.cover }}" alt="{{ image.title or 'Daily Miku' }}" loading="lazy">
+                    {% else %}
+                        <div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--text-muted);">
+                            No Image
+                        </div>
+                    {% endif %}
+                </div>
+                <div class="gallery-item-content">
+                    <div class="gallery-item-date">{{ image.date or 'Unknown Date' }}</div>
+                    <div class="gallery-item-title">{{ image.title or 'Daily Miku' }}</div>
+                    {% if image.tags %}
+                        <div class="gallery-item-tags">
+                            {% for tag in image.tags[:2] %}
+                                <span class="gallery-item-tag">{{ tag }}</span>
+                            {% endfor %}
+                            {% if image.tags|length > 2 %}
+                                <span class="gallery-item-tag">+{{ image.tags|length - 2 }}</span>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                </div>
+            </a>
+        {% endfor %}
+    </div>
+{% else %}
+    <div class="empty-gallery">
+        <h3>No images found</h3>
+        <p>Try checking back later!</p>
+    </div>
+{% endif %}
+{% endblock %}

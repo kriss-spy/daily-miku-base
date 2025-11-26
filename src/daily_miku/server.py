@@ -115,12 +115,14 @@ async def root():
             "today": "/api/today",
             "latest": "/api/latest",
             "random": "/api/random",
+            "list": "/api/list",
             "stats": "/api/stats",
             "htmlPages": {
                 "dateImage": "/{date}",
                 "today": "/today",
                 "latest": "/latest or /latest/page",
                 "random": "/random or /random/page",
+                "list": "/list",
             },
         },
     }
@@ -141,6 +143,7 @@ async def api_root():
             "today": "/api/today",
             "latest": "/api/latest",
             "random": "/api/random",
+            "list": "/api/list",
             "stats": "/api/stats",
         },
     }
@@ -283,6 +286,32 @@ async def get_stats():
         "dateRange": date_range,
         "tags": sorted(list(all_tags)),
     }
+
+
+@app.get("/api/list")
+async def get_list_api():
+    """Get all images as JSON (JSON API)."""
+    client = get_client()
+    items = client.fetch_raindrops(perpage=50)
+
+    if not items:
+        return {"total": 0, "images": []}
+
+    images = []
+    for item in items:
+        created = item.get("created", "")
+        if created:
+            date = datetime.fromisoformat(created.replace("Z", "+00:00")).strftime(
+                "%Y-%m-%d"
+            )
+        else:
+            date = None
+
+        formatted = client.format_response(item, date)
+        images.append(formatted)
+
+    logger.debug(f"Retrieved list of {len(images)} images")
+    return {"total": len(images), "images": images}
 
 
 @app.get("/api/image/{date}")
@@ -471,6 +500,30 @@ async def get_random_page():
     return template.render(
         image=image_data, date=date or "random", prev_date=None, next_date=None
     )
+
+
+@app.get("/list", response_class=HTMLResponse)
+async def get_list_page():
+    """Display all images in a gallery grid."""
+    client = get_client()
+    items = client.fetch_raindrops(perpage=50)
+
+    images = []
+    for item in items:
+        created = item.get("created", "")
+        if created:
+            date = datetime.fromisoformat(created.replace("Z", "+00:00")).strftime(
+                "%Y-%m-%d"
+            )
+        else:
+            date = None
+
+        formatted = client.format_response(item, date)
+        images.append(formatted)
+
+    logger.debug(f"Retrieved gallery list with {len(images)} images")
+    template = template_env.get_template("list.html")
+    return template.render(images=images, total=len(images))
 
 
 # ============================================================================
