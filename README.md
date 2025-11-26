@@ -1,6 +1,6 @@
 # daily miku base
 
-multi funtional server/website
+multi functional server/website
 read daily miku images from raindrop.io
 display daily miku images in good layouts
 send daily email
