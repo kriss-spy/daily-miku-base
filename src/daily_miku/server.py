@@ -1,15 +1,21 @@
 """FastAPI server for daily-miku-base API."""
 
+import logging
+import os
 import random
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
 from jinja2 import Environment, PackageLoader
 
+from .logging_config import setup_logging, generate_request_id, set_request_id, get_request_id
 from .raindrop import get_client
+
+# Set up logging
+logger = setup_logging(os.getenv("LOG_LEVEL", "INFO"))
 
 app = FastAPI(
     title="daily-miku-base API",
@@ -31,6 +37,56 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ============================================================================
+# REQUEST LOGGING MIDDLEWARE
+# ============================================================================
+
+@app.middleware("http")
+async def log_request_middleware(request: Request, call_next):
+    """Log each request with a unique request ID."""
+    # Generate and set request ID
+    request_id = generate_request_id()
+    set_request_id(request_id)
+    
+    # Log incoming request
+    logger.info(
+        f"Request started",
+        extra={
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+            "client": request.client.host if request.client else "unknown",
+        },
+    )
+    
+    try:
+        response = await call_next(request)
+        
+        # Log response
+        logger.info(
+            f"Request completed",
+            extra={
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+            },
+        )
+        
+        return response
+    except Exception as exc:
+        # Log error
+        logger.error(
+            f"Request failed: {str(exc)}",
+            extra={
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+            },
+        )
+        raise
 
 
 # ============================================================================
@@ -95,8 +151,10 @@ async def get_today_api():
     item = client.get_by_date(today)
     
     if not item:
+        logger.info(f"No image found for today ({today})")
         raise HTTPException(status_code=404, detail=f"No daily miku found for {today}")
     
+    logger.debug(f"Retrieved image for today ({today})")
     return client.format_response(item, today)
 
 
@@ -413,4 +471,50 @@ async def get_image_page(date: str):
 # ============================================================================
 
 # Let HTTPException from endpoints pass through with their own messages
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Handle HTTP exceptions with request ID."""
+    logger.warning(
+        f"HTTP exception: {exc.detail}",
+        extra={
+            "request_id": get_request_id(),
+            "status_code": exc.status_code,
+            "path": request.url.path,
+        },
+    )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "detail": exc.detail,
+            "request_id": get_request_id(),
+            "path": str(request.url.path),
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Handle general exceptions with request ID and logging."""
+    request_id = get_request_id()
+    
+    logger.error(
+        f"Unhandled exception: {type(exc).__name__}: {str(exc)}",
+        extra={
+            "request_id": request_id,
+            "path": request.url.path,
+            "error_type": type(exc).__name__,
+        },
+    )
+    
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Internal server error",
+            "request_id": request_id,
+            "path": str(request.url.path),
+            "error_type": type(exc).__name__,
+        },
+    )
 

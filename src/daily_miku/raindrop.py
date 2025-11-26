@@ -1,5 +1,6 @@
 """Raindrop.io API client for fetching daily miku bookmarks."""
 
+import logging
 import os
 import time
 from datetime import datetime
@@ -9,6 +10,8 @@ import requests
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger("daily_miku")
 
 RAINDROP_TOKEN = os.getenv("RAINDROP_TOKEN")
 RAINDROP_TAG = os.getenv("RAINDROP_TAG", "daily-miku")
@@ -110,7 +113,10 @@ class RaindropClient:
         # Check cache first
         cached = self.cache.get(cache_key)
         if cached is not None:
+            logger.debug(f"Cache hit for {cache_key}")
             return cached
+
+        logger.debug(f"Cache miss for {cache_key}, fetching from API")
 
         params = {
             "search": f"#{search_tag}",
@@ -130,12 +136,14 @@ class RaindropClient:
             data = response.json()
             items = data.get("items", [])
             
+            logger.info(f"Fetched {len(items)} raindrops with tag '{search_tag}'")
+            
             # Cache the result
             self.cache.set(cache_key, items)
             
             return items
         except requests.RequestException as e:
-            print(f"Failed to fetch raindrops: {e}")
+            logger.error(f"Failed to fetch raindrops: {e}")
             return []
 
     def get_by_date(self, date: str) -> Optional[dict]:
