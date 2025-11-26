@@ -11,6 +11,7 @@ The daily-miku-base API includes comprehensive structured logging and error hand
 All logs are output as JSON for easy parsing and ingestion into log management systems (ELK stack, Datadog, etc.).
 
 **Example log output:**
+
 ```json
 {
   "timestamp": "2025-11-26T14:30:45.123456+00:00",
@@ -29,6 +30,7 @@ All logs are output as JSON for easy parsing and ingestion into log management s
 Every HTTP request gets a unique request ID for tracing across logs and responses. This helps correlate errors with user requests.
 
 **Middleware tracking:**
+
 - Request start: logs method, path, client IP, and request ID
 - Request completion: logs status code
 - Request errors: captures exception type and details
@@ -36,12 +38,14 @@ Every HTTP request gets a unique request ID for tracing across logs and response
 ### 3. Enhanced Error Responses
 
 Error responses now include:
+
 - `detail`: The error message
 - `request_id`: Unique request ID for debugging
 - `path`: The requested path
 - `error_type`: Type of exception (for unhandled errors)
 
 **Example error response:**
+
 ```json
 {
   "detail": "No daily miku found for 2025-12-31",
@@ -53,6 +57,7 @@ Error responses now include:
 ### 4. API Endpoint Logging
 
 Key endpoints log important events:
+
 - Cache hits/misses for Raindrop API
 - Successful image retrievals
 - API failures and errors
@@ -75,6 +80,7 @@ Supported levels: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`
 Logs are written to stdout and can be captured by container orchestration systems (Docker, Kubernetes).
 
 **Local development:**
+
 ```bash
 python -m uvicorn src.daily_miku.server:app --reload
 ```
@@ -82,6 +88,7 @@ python -m uvicorn src.daily_miku.server:app --reload
 Logs will appear in the terminal as formatted JSON.
 
 **Docker:**
+
 ```bash
 docker run -e LOG_LEVEL=INFO daily-miku-api
 ```
@@ -95,6 +102,7 @@ Request IDs appear in:
 3. **HTTP headers** (X-Request-ID) - can be added in middleware if needed
 
 **Example debugging workflow:**
+
 ```bash
 # See a request ID in an error response
 curl https://www.dailymiku.dev/api/image/2025-12-31
@@ -110,6 +118,7 @@ grep "550e8400-e29b-41d4-a716-446655440000" logs.json
 The Raindrop API client logs cache operations:
 
 **Cache hit:**
+
 ```json
 {
   "timestamp": "...",
@@ -120,6 +129,7 @@ The Raindrop API client logs cache operations:
 ```
 
 **Cache miss (fetching from API):**
+
 ```json
 {
   "timestamp": "...",
@@ -129,6 +139,7 @@ The Raindrop API client logs cache operations:
 ```
 
 **Successful fetch:**
+
 ```json
 {
   "timestamp": "...",
@@ -181,6 +192,7 @@ fields timestamp, level, message, request_id
 ### HTTP Exceptions
 
 HTTP exceptions (e.g., 404, 422) include:
+
 - Original error detail
 - Request ID for tracing
 - Path information
@@ -188,12 +200,14 @@ HTTP exceptions (e.g., 404, 422) include:
 ### Unhandled Exceptions
 
 Unhandled exceptions are caught and return:
+
 - Generic "Internal server error" message (security best practice)
 - Request ID for debugging
 - Error type for diagnostics
 - Full exception logged server-side
 
 **Example unhandled error response:**
+
 ```json
 {
   "detail": "Internal server error",
@@ -221,6 +235,7 @@ Unhandled exceptions are caught and return:
 ## Future Enhancements
 
 Possible additions:
+
 - Log rotation and file archiving
 - Metrics export (Prometheus `/metrics` endpoint)
 - Error aggregation and alerting

@@ -106,10 +106,10 @@ class RaindropClient:
             List of raindrop items
         """
         search_tag = tag or self.tag
-        
+
         # Create cache key based on parameters
         cache_key = f"raindrops:{search_tag}:{perpage}:{page}:{sort}"
-        
+
         # Check cache first
         cached = self.cache.get(cache_key)
         if cached is not None:
@@ -135,12 +135,12 @@ class RaindropClient:
             response.raise_for_status()
             data = response.json()
             items = data.get("items", [])
-            
+
             logger.info(f"Fetched {len(items)} raindrops with tag '{search_tag}'")
-            
+
             # Cache the result
             self.cache.set(cache_key, items)
-            
+
             return items
         except requests.RequestException as e:
             logger.error(f"Failed to fetch raindrops: {e}")

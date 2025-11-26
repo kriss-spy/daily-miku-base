@@ -71,7 +71,9 @@ def get_request_id() -> str:
     return request_id_context
 
 
-def log_with_context(logger: logging.Logger, level: str, message: str, **extra_fields) -> None:
+def log_with_context(
+    logger: logging.Logger, level: str, message: str, **extra_fields
+) -> None:
     """Log a message with additional context."""
     record = logging.LogRecord(
         name=logger.name,

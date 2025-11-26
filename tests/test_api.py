@@ -54,7 +54,7 @@ class TestRootEndpoint:
         """Test root endpoint returns API information."""
         response = client.get("/")
         assert response.status_code == 200
-        
+
         data = response.json()
         assert data["name"] == "daily-miku-base API"
         assert data["version"] == "0.1.0"
@@ -69,7 +69,7 @@ class TestImageMetadataEndpoint:
         """Test getting image metadata for a specific date."""
         response = client.get("/api/image/2025-01-15")
         assert response.status_code == 200
-        
+
         data = response.json()
         assert data["date"] == "2025-01-15"
         assert data["title"] == "Hatsune Miku Daily #42"
@@ -115,7 +115,7 @@ class TestWeekEndpoint:
         """Test getting images for a week."""
         response = client.get("/api/week/2025-W03")
         assert response.status_code == 200
-        
+
         data = response.json()
         assert data["week"] == "2025-W03"
         assert "images" in data
@@ -136,7 +136,7 @@ class TestMonthEndpoint:
         """Test getting images for a month."""
         response = client.get("/api/month/2025-01")
         assert response.status_code == 200
-        
+
         data = response.json()
         assert data["month"] == "2025-01"
         assert "images" in data
@@ -162,7 +162,7 @@ class TestYearEndpoint:
         """Test getting images for a year."""
         response = client.get("/api/year/2025")
         assert response.status_code == 200
-        
+
         data = response.json()
         assert data["year"] == 2025
         assert "images" in data
@@ -194,7 +194,7 @@ class TestLatestEndpoint:
         """Test getting latest image."""
         response = client.get("/latest")
         assert response.status_code == 200
-        
+
         data = response.json()
         assert "date" in data
         assert "title" in data
@@ -218,7 +218,7 @@ class TestRandomEndpoint:
         """Test getting random image."""
         response = client.get("/random")
         assert response.status_code == 200
-        
+
         data = response.json()
         assert "title" in data
         assert data["title"] == "Hatsune Miku Daily #42"
@@ -241,7 +241,7 @@ class TestStatsEndpoint:
         """Test getting collection statistics."""
         response = client.get("/api/stats")
         assert response.status_code == 200
-        
+
         data = response.json()
         assert "total" in data
         assert "dateRange" in data
@@ -258,7 +258,7 @@ class TestStatsEndpoint:
             )
             response = client.get("/api/stats")
             assert response.status_code == 200
-            
+
             data = response.json()
             assert data["total"] == 0
             assert data["dateRange"] is None

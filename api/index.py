@@ -6,6 +6,7 @@ Vercel's Python runtime discovers and runs the ASGI `app` exposed here.
 The sys.path manipulation allows importing from ../src even though Vercel
 doesn't install the package in editable mode.
 """
+
 import sys
 from pathlib import Path
 

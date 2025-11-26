@@ -83,7 +83,7 @@ class TestHTMLTemplate:
     def test_create_template_complete_data(self, sample_miku_data):
         """Test template creation with complete data."""
         html = create_html_template(sample_miku_data)
-        
+
         # Check for key elements
         assert "Hatsune Miku Daily #42" in html
         assert "2025-01-15" in html
@@ -92,7 +92,7 @@ class TestHTMLTemplate:
         assert "Beautiful Miku artwork" in html
         assert "Test note about the artwork" in html
         assert "twitter.com" in html
-        
+
         # Check for HTML structure
         assert "<!DOCTYPE html>" in html
         assert "<html" in html
@@ -106,7 +106,7 @@ class TestHTMLTemplate:
             "coverUrl": "https://example.com/image.jpg",
         }
         html = create_html_template(minimal_data)
-        
+
         assert "2025-01-15" in html
         assert "https://example.com/image.jpg" in html
         assert "<!DOCTYPE html>" in html
@@ -134,13 +134,13 @@ class TestSendEmail:
         with patch("smtplib.SMTP") as mock_smtp:
             mock_server = MagicMock()
             mock_smtp.return_value.__enter__.return_value = mock_server
-            
+
             result = send_email(
                 to_email="test@example.com",
                 subject="Test Subject",
                 html_body="<html><body>Test</body></html>",
             )
-            
+
             assert result is True
             mock_server.starttls.assert_called_once()
             mock_server.login.assert_called_once_with(
@@ -163,7 +163,7 @@ class TestSendEmail:
             mock_smtp.return_value.__enter__.side_effect = smtplib.SMTPException(
                 "Connection failed"
             )
-            
+
             result = send_email(
                 to_email="test@example.com",
                 subject="Test",
@@ -190,12 +190,12 @@ class TestSendDailyMikuEmail:
         with patch("smtplib.SMTP") as mock_smtp:
             mock_server = MagicMock()
             mock_smtp.return_value.__enter__.return_value = mock_server
-            
+
             result = send_daily_miku_email(sample_miku_data)
-            
+
             assert result is True
             mock_server.send_message.assert_called_once()
-            
+
             # Check that subject contains the date
             call_args = mock_server.send_message.call_args
             msg = call_args[0][0]
@@ -208,9 +208,9 @@ class TestSendDailyMikuEmail:
         with patch("smtplib.SMTP") as mock_smtp:
             mock_server = MagicMock()
             mock_smtp.return_value.__enter__.return_value = mock_server
-            
+
             result = send_daily_miku_email(sample_miku_data)
-            
+
             assert result is True
             call_args = mock_server.send_message.call_args
             msg = call_args[0][0]

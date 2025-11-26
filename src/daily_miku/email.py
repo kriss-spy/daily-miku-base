@@ -22,10 +22,10 @@ EMAIL_TO = os.getenv("EMAIL_TO")
 def is_valid_email(email: str) -> bool:
     """
     Validate email format.
-    
+
     Args:
         email: Email address to validate
-    
+
     Returns:
         True if email format is valid
     """

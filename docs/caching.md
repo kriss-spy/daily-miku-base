@@ -15,6 +15,7 @@ export RAINDROP_CACHE_TTL=300  # 5 minutes (default)
 ```
 
 **Options:**
+
 - `300` (5 min) — default, balances freshness and performance
 - `60` (1 min) — more frequent updates
 - `3600` (1 hour) — longer caching for high-traffic scenarios
@@ -32,6 +33,7 @@ export RAINDROP_CACHE_TTL=300  # 5 minutes (default)
 ### Cache Keys
 
 Each request is cached with a unique key based on:
+
 - Tag name (`tag`)
 - Results per page (`perpage`)
 - Page number (`page`)
@@ -48,11 +50,13 @@ Example key: `raindrops:daily-miku:50:0:-created`
 ## Performance Impact
 
 ### Before Caching
+
 - Each page view → 1+ Raindrop API call
 - 10 page views/minute → 10 API calls/minute
 - Rate limit risk with high traffic
 
 ### After Caching (5 min TTL)
+
 - Page views within 5 min → 0 API calls (from cache)
 - 10 page views in 2 min → 1 API call
 - 60+ page views/min → ~12 API calls/min (vs 60+)
@@ -92,6 +96,7 @@ pytest tests/test_raindrop.py::TestRaindropClientCaching -v
 ```
 
 Tests verify:
+
 - Cache stores and retrieves data correctly
 - Expired entries are removed
 - Different parameters create separate cache keys

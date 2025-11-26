@@ -40,6 +40,7 @@ def main():
     elif command == "serve":
         # Start development server
         import uvicorn
+
         print("Starting development server...")
         print("API docs: http://localhost:8000/docs")
         uvicorn.run("daily_miku.server:app", host="0.0.0.0", port=8000, reload=True)
