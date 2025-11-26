@@ -4,6 +4,7 @@ import json
 import sys
 from datetime import datetime
 
+from . import email as email_module
 from .raindrop import get_client
 
 
@@ -80,3 +81,25 @@ def list_recent(limit: int = 10):
         print(f"  {date}: {title}")
         print(f"    Source: {link}")
         print()
+
+
+def send_email():
+    """Send today's daily miku via email."""
+    print("Fetching today's daily miku...")
+    client = get_client()
+    item = client.get_today()
+
+    if not item:
+        today = datetime.now().strftime("%Y-%m-%d")
+        print(f"✗ No daily miku found for {today}", file=sys.stderr)
+        sys.exit(1)
+
+    formatted = client.format_response(item)
+    print(f"✓ Found: {formatted.get('title', 'Untitled')}")
+    print("Sending email...")
+
+    if email_module.send_daily_miku_email(formatted):
+        print("✓ Email sent successfully!")
+    else:
+        print("✗ Failed to send email", file=sys.stderr)
+        sys.exit(1)

@@ -14,6 +14,7 @@ def main():
         print("  fetch-date <date>    Fetch daily miku for specific date (YYYY-MM-DD)")
         print("  test-connection      Test Raindrop.io API connection")
         print("  list [n]             List recent bookmarks (default: 10)")
+        print("  send-email           Send today's daily miku via email")
         sys.exit(1)
 
     command = sys.argv[1]
@@ -33,6 +34,8 @@ def main():
     elif command == "list":
         limit = int(sys.argv[2]) if len(sys.argv) > 2 else 10
         cli.list_recent(limit)
+    elif command == "send-email":
+        cli.send_email()
     else:
         print(f"Unknown command: {command}", file=sys.stderr)
         sys.exit(1)
