@@ -12,7 +12,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_PORT_STR = os.getenv("SMTP_PORT", "587").strip()
+SMTP_PORT = int(SMTP_PORT_STR) if SMTP_PORT_STR else 587
 SMTP_USER = os.getenv("SMTP_USER")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 EMAIL_FROM = os.getenv("EMAIL_FROM")
