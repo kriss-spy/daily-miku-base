@@ -5,6 +5,7 @@ All notable changes to daily-miku-base will be documented in this file.
 ## [Unreleased]
 
 ### Added
+
 - Project structure and documentation
 - Architecture documentation with system design and URL schema
 - Requirements specification (functional and non-functional)
@@ -15,6 +16,7 @@ All notable changes to daily-miku-base will be documented in this file.
 - Email automation documentation
 
 ### Configuration
+
 - Domain registered: `dailymiku.dev`
 - Raindrop.io integration with `#daily-miku` tag
 - Vercel deployment strategy defined

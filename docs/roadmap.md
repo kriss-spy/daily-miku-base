@@ -11,6 +11,7 @@ daily-miku-base is a comprehensive system for discovering, displaying, and shari
 **Goal**: Functional server with API and CLI for daily tasks
 
 **Features**:
+
 - ✅ Documentation and architecture design
 - ⬜ Raindrop.io API client implementation
   - Fetch bookmarks by tag (`#daily-miku`)
@@ -40,6 +41,7 @@ daily-miku-base is a comprehensive system for discovering, displaying, and shari
 **Goal**: Simple web interface for browsing images
 
 **Features**:
+
 - ⬜ Single-page photo view (`/{date}`)
   - Display image with metadata
   - Source link, title, description
@@ -56,6 +58,7 @@ daily-miku-base is a comprehensive system for discovering, displaying, and shari
 **Goal**: Multiple view modes for different time scales
 
 **Features**:
+
 - ⬜ Week view (`/week/{YYYY-W##}`)
   - 7 images in horizontal row
   - Scroll navigation
@@ -74,6 +77,7 @@ daily-miku-base is a comprehensive system for discovering, displaying, and shari
 **Goal**: Fancy view transitions and 3D effects
 
 **Features**:
+
 - ⬜ Smooth zoom transitions between views
   - Day ↔ Week ↔ Month ↔ Year
   - iPhone Photos-style animations
@@ -95,6 +99,7 @@ daily-miku-base is a comprehensive system for discovering, displaying, and shari
 **Goal**: Find specific images and explore by tags
 
 **Features**:
+
 - ⬜ Search functionality
   - `GET /api/search?q={query}`
   - Search by title, description, tags
@@ -113,6 +118,7 @@ daily-miku-base is a comprehensive system for discovering, displaying, and shari
 **Goal**: Live production deployment
 
 **Features**:
+
 - ⬜ Vercel deployment
   - Frontend + API on Vercel
   - Environment variables configured
@@ -133,6 +139,7 @@ daily-miku-base is a comprehensive system for discovering, displaying, and shari
 ## Future Enhancements (Post-MVP)
 
 ### Optional Features
+
 - **Image caching**: Local storage fallback (Vercel Blob/R2)
 - **Permanent copy automation**: Bulk enable for existing bookmarks
 - **Multiple themes**: Dark mode, custom color schemes
@@ -145,6 +152,7 @@ daily-miku-base is a comprehensive system for discovering, displaying, and shari
 - **Comments/reactions**: Community engagement
 
 ### Technical Improvements
+
 - **Caching layer**: Redis for frequently accessed data
 - **CDN optimization**: Edge caching for static assets
 - **Database**: PostgreSQL for local metadata storage

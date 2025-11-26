@@ -153,14 +153,17 @@ pytest tests/
 ## Troubleshooting
 
 **`ModuleNotFoundError`**:
+
 - Make sure you're in the activated virtual environment
 - Run `pip install -e .` again
 
 **`401 Unauthorized` from Raindrop.io**:
+
 - Verify your `RAINDROP_TOKEN` is correct
 - Check token hasn't expired
 
 **No images found**:
+
 - Verify bookmarks are tagged with `#daily-miku`
 - Check date format matches `YYYY-MM-DD`
 

@@ -3,6 +3,7 @@
 ## Overview
 
 daily-miku-base is deployed using:
+
 - **Vercel** — Frontend + Python API backend
 - **GitHub Actions** — Daily scheduled tasks (email, fetch)
 - **Raindrop.io CDN** — Image hosting (no local storage)
@@ -91,6 +92,7 @@ git push origin main
 4. Add/update DNS records:
 
 **For Vercel:**
+
 ```
 Type: CNAME
 Host: @
@@ -217,6 +219,7 @@ jobs:
 ```
 
 **Add secrets** in GitHub repo → Settings → Secrets and variables → Actions:
+
 - `RAINDROP_TOKEN`
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`
 - `EMAIL_FROM`, `EMAIL_TO`
@@ -257,6 +260,7 @@ curl https://dailymiku.dev/2025-11-26
 ### Uptime Monitoring (Optional)
 
 Use a service like:
+
 - **UptimeRobot** (free, checks every 5 min)
 - **Better Uptime**
 - **Cronitor**
@@ -296,6 +300,7 @@ def get_daily_miku(date: str):
 ### Rollback Deployment
 
 In Vercel dashboard:
+
 1. Go to Deployments
 2. Find previous working deployment
 3. Click "..." → "Promote to Production"
@@ -309,21 +314,25 @@ In Vercel dashboard:
 ## Troubleshooting
 
 **"Function invocation failed"**:
+
 - Check Vercel function logs
 - Verify environment variables are set
 - Check Python dependencies in `api/requirements.txt`
 
 **Domain not resolving**:
+
 - Verify DNS records in Namecheap
 - Wait for DNS propagation (up to 48 hours, usually <1 hour)
 - Use `dig dailymiku.dev` to check DNS
 
 **Images not loading**:
+
 - Check Raindrop.io API is accessible
 - Verify `RAINDROP_TOKEN` is valid
 - Check if bookmarks are tagged correctly
 
 **GitHub Action fails**:
+
 - Check secrets are configured in repo settings
 - Verify Python script runs locally first
 - Check action logs for specific error messages
