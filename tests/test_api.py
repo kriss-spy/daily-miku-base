@@ -51,15 +51,13 @@ class TestRootEndpoint:
     """Test root API endpoint."""
 
     def test_root_returns_api_info(self, client):
-        """Test root endpoint returns API information."""
+        """Test root endpoint returns homepage HTML."""
         response = client.get("/")
         assert response.status_code == 200
-
-        data = response.json()
-        assert data["name"] == "daily-miku-base API"
-        assert data["version"] == "0.1.0"
-        assert "endpoints" in data
-        assert "/api/image/{date}" in data["endpoints"].values()
+        assert "text/html" in response.headers.get("content-type", "")
+        assert "Daily Miku" in response.text
+        assert "/list" in response.text
+        assert "/today" in response.text
 
 
 class TestImageMetadataEndpoint:

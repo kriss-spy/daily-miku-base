@@ -100,32 +100,11 @@ async def log_request_middleware(request: Request, call_next):
 # ============================================================================
 
 
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 async def root():
-    """Root endpoint - returns JSON API info."""
-    return {
-        "name": "daily-miku-base API",
-        "version": "0.1.0",
-        "endpoints": {
-            "image": "/api/image/{date}",
-            "imageFile": "/image/{date}",
-            "week": "/api/week/{week}",
-            "month": "/api/month/{month}",
-            "year": "/api/year/{year}",
-            "today": "/api/today",
-            "latest": "/api/latest",
-            "random": "/api/random",
-            "list": "/api/list",
-            "stats": "/api/stats",
-            "htmlPages": {
-                "dateImage": "/{date}",
-                "today": "/today",
-                "latest": "/latest or /latest/page",
-                "random": "/random or /random/page",
-                "list": "/list",
-            },
-        },
-    }
+    """Root endpoint - returns HTML homepage."""
+    template = template_env.get_template("home.html")
+    return template.render()
 
 
 @app.get("/api/root")

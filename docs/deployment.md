@@ -138,21 +138,21 @@ from .raindrop import get_daily_miku
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path
-        
+      
         # Route: /image/YYYY-MM-DD
         if path.startswith('/image/'):
             date = path.split('/')[2]
             return self.serve_image(date)
-        
+      
         # Route: /api/image/YYYY-MM-DD
         elif path.startswith('/api/image/'):
             date = path.split('/')[3]
             return self.serve_json(date)
-        
+      
         # Route: / or /YYYY-MM-DD
         else:
             return self.serve_html(path)
-    
+  
     def serve_image(self, date):
         # Redirect to Raindrop CDN URL
         data = get_daily_miku(date)
@@ -162,7 +162,7 @@ class handler(BaseHTTPRequestHandler):
             self.end_headers()
         else:
             self.send_error(404, 'Image not found')
-    
+  
     def serve_json(self, date):
         data = get_daily_miku(date)
         self.send_response(200)
@@ -195,16 +195,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+    
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
+    
       - name: Install dependencies
         run: |
           pip install requests python-dotenv
-      
+    
       - name: Send daily email
         env:
           RAINDROP_TOKEN: ${{ secrets.RAINDROP_TOKEN }}
