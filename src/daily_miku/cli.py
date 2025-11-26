@@ -1,8 +1,10 @@
 """CLI commands for daily-miku-base."""
 
 import json
+import os
 import sys
 from datetime import datetime
+from pathlib import Path
 
 from . import email as email_module
 from .raindrop import get_client
@@ -84,7 +86,7 @@ def list_recent(limit: int = 10):
 
 
 def send_email():
-    """Send today's daily miku via email."""
+    """Send today's daily miku via email (with deduplication)."""
     print("Fetching today's daily miku...")
     client = get_client()
     item = client.get_today()
@@ -95,10 +97,25 @@ def send_email():
         sys.exit(1)
 
     formatted = client.format_response(item)
+    date = formatted.get("date", "today")
+    
+    # Check if email for this date was already sent (deduplication)
+    cache_dir = Path(os.getenv("XDG_CACHE_HOME", os.path.expanduser("~/.cache")))
+    cache_dir = cache_dir / "daily-miku"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    
+    sent_file = cache_dir / f"email-sent-{date}.txt"
+    if sent_file.exists():
+        print(f"ℹ Email for {date} was already sent today (cached from {sent_file.read_text().strip()})")
+        print("Skipping to avoid duplicates.")
+        return
+    
     print(f"✓ Found: {formatted.get('title', 'Untitled')}")
     print("Sending email...")
 
     if email_module.send_daily_miku_email(formatted):
+        # Mark as sent
+        sent_file.write_text(datetime.now().isoformat())
         print("✓ Email sent successfully!")
     else:
         print("✗ Failed to send email", file=sys.stderr)
