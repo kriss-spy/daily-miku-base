@@ -1,6 +1,7 @@
 """Raindrop.io API client for fetching daily miku bookmarks."""
 
 import os
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -11,20 +12,61 @@ load_dotenv()
 
 RAINDROP_TOKEN = os.getenv("RAINDROP_TOKEN")
 RAINDROP_TAG = os.getenv("RAINDROP_TAG", "daily-miku")
+RAINDROP_CACHE_TTL = int(os.getenv("RAINDROP_CACHE_TTL", "300"))  # 5 minutes default
 BASE_URL = "https://api.raindrop.io/rest/v1"
+
+
+class SimpleCache:
+    """Simple in-memory TTL cache."""
+
+    def __init__(self, ttl: int = 300):
+        """Initialize cache with TTL in seconds."""
+        self.ttl = ttl
+        self.cache: dict = {}
+        self.timestamps: dict = {}
+
+    def get(self, key: str) -> Optional[list[dict]]:
+        """Get value from cache if not expired."""
+        if key not in self.cache:
+            return None
+
+        elapsed = time.time() - self.timestamps[key]
+        if elapsed > self.ttl:
+            del self.cache[key]
+            del self.timestamps[key]
+            return None
+
+        return self.cache[key]
+
+    def set(self, key: str, value: list[dict]) -> None:
+        """Set value in cache with current timestamp."""
+        self.cache[key] = value
+        self.timestamps[key] = time.time()
+
+    def clear(self) -> None:
+        """Clear all cached values."""
+        self.cache.clear()
+        self.timestamps.clear()
 
 
 class RaindropClient:
     """Client for interacting with Raindrop.io API."""
 
-    def __init__(self, token: Optional[str] = None, tag: Optional[str] = None):
+    def __init__(
+        self,
+        token: Optional[str] = None,
+        tag: Optional[str] = None,
+        cache_ttl: Optional[int] = None,
+    ):
         self.token = token or RAINDROP_TOKEN
         self.tag = tag or RAINDROP_TAG
+        self.cache_ttl = cache_ttl or RAINDROP_CACHE_TTL
 
         if not self.token:
             raise ValueError("RAINDROP_TOKEN environment variable is required")
 
         self.headers = {"Authorization": f"Bearer {self.token}"}
+        self.cache = SimpleCache(ttl=self.cache_ttl)
 
     def test_connection(self) -> bool:
         """Test if the API token is valid."""
@@ -61,6 +103,15 @@ class RaindropClient:
             List of raindrop items
         """
         search_tag = tag or self.tag
+        
+        # Create cache key based on parameters
+        cache_key = f"raindrops:{search_tag}:{perpage}:{page}:{sort}"
+        
+        # Check cache first
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         params = {
             "search": f"#{search_tag}",
             "perpage": perpage,
@@ -77,7 +128,12 @@ class RaindropClient:
             )
             response.raise_for_status()
             data = response.json()
-            return data.get("items", [])
+            items = data.get("items", [])
+            
+            # Cache the result
+            self.cache.set(cache_key, items)
+            
+            return items
         except requests.RequestException as e:
             print(f"Failed to fetch raindrops: {e}")
             return []
@@ -152,6 +208,10 @@ class RaindropClient:
             "raindropId": item.get("_id"),
             "timestamp": item.get("created", ""),
         }
+
+    def clear_cache(self) -> None:
+        """Clear the cache."""
+        self.cache.clear()
 
 
 def get_client() -> RaindropClient:

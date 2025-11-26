@@ -7,10 +7,7 @@ from unittest.mock import patch
 import pytest
 import requests_mock
 
-# Clear any loaded environment before importing the module
-os.environ.pop("RAINDROP_TOKEN", None)
-
-from daily_miku.raindrop import RaindropClient, get_client
+from daily_miku.raindrop import RaindropClient, get_client, SimpleCache
 
 
 @pytest.fixture
@@ -190,3 +187,101 @@ class TestRaindropClient:
         client = get_client()
         assert isinstance(client, RaindropClient)
         assert client.token == "test_token_123"
+
+
+class TestSimpleCache:
+    """Test SimpleCache class."""
+
+    def test_cache_get_set(self):
+        """Test basic cache get/set operations."""
+        cache = SimpleCache(ttl=10)
+        test_data = [{"_id": 1, "title": "test"}]
+        
+        cache.set("key1", test_data)
+        result = cache.get("key1")
+        
+        assert result == test_data
+
+    def test_cache_expires(self):
+        """Test cache expiration after TTL."""
+        cache = SimpleCache(ttl=1)
+        test_data = [{"_id": 1}]
+        
+        cache.set("key1", test_data)
+        import time
+        time.sleep(1.1)
+        
+        result = cache.get("key1")
+        assert result is None
+
+    def test_cache_miss(self):
+        """Test cache miss returns None."""
+        cache = SimpleCache(ttl=10)
+        result = cache.get("nonexistent")
+        assert result is None
+
+    def test_cache_clear(self):
+        """Test clearing cache."""
+        cache = SimpleCache(ttl=10)
+        cache.set("key1", [{"_id": 1}])
+        cache.set("key2", [{"_id": 2}])
+        
+        cache.clear()
+        
+        assert cache.get("key1") is None
+        assert cache.get("key2") is None
+
+
+class TestRaindropClientCaching:
+    """Test caching behavior in RaindropClient."""
+
+    def test_fetch_raindrops_caches_result(self, client):
+        """Test that fetch_raindrops caches results."""
+        with requests_mock.Mocker() as m:
+            m.get(
+                "https://api.raindrop.io/rest/v1/raindrops/0",
+                json={"items": [{"_id": 1}], "count": 1},
+            )
+            
+            # First call makes API request
+            result1 = client.fetch_raindrops()
+            assert len(m.request_history) == 1
+            
+            # Second call should use cache
+            result2 = client.fetch_raindrops()
+            assert len(m.request_history) == 1  # No new request
+            assert result1 == result2
+
+    def test_cache_different_params(self, client):
+        """Test that different parameters create separate cache keys."""
+        with requests_mock.Mocker() as m:
+            m.get(
+                "https://api.raindrop.io/rest/v1/raindrops/0",
+                json={"items": [{"_id": 1}], "count": 1},
+            )
+            
+            # Different page parameters should hit API twice
+            client.fetch_raindrops(page=0)
+            client.fetch_raindrops(page=1)
+            
+            assert len(m.request_history) == 2
+
+    def test_client_cache_ttl(self, mock_env):
+        """Test client respects custom cache TTL."""
+        client = RaindropClient(token="test_token", cache_ttl=1)
+        assert client.cache_ttl == 1
+        assert client.cache.ttl == 1
+
+    def test_clear_cache(self, client):
+        """Test clearing client cache."""
+        with requests_mock.Mocker() as m:
+            m.get(
+                "https://api.raindrop.io/rest/v1/raindrops/0",
+                json={"items": [{"_id": 1}], "count": 1},
+            )
+            
+            client.fetch_raindrops()
+            client.clear_cache()
+            
+            # Cache should be empty
+            assert client.cache.get("raindrops:daily-miku:50:0:-created") is None
