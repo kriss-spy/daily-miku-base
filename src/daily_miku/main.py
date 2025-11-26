@@ -15,6 +15,7 @@ def main():
         print("  test-connection      Test Raindrop.io API connection")
         print("  list [n]             List recent bookmarks (default: 10)")
         print("  send-email           Send today's daily miku via email")
+        print("  serve                Start API server (development)")
         sys.exit(1)
 
     command = sys.argv[1]
@@ -36,6 +37,12 @@ def main():
         cli.list_recent(limit)
     elif command == "send-email":
         cli.send_email()
+    elif command == "serve":
+        # Start development server
+        import uvicorn
+        print("Starting development server...")
+        print("API docs: http://localhost:8000/docs")
+        uvicorn.run("daily_miku.server:app", host="0.0.0.0", port=8000, reload=True)
     else:
         print(f"Unknown command: {command}", file=sys.stderr)
         sys.exit(1)
