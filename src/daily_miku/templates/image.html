@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block title %}{{ date }} - Daily Miku{% endblock %}
+
+{% block content %}
+<div class="content">
+    {% if image %}
+        <div class="image-container">
+            <img src="{{ image.coverUrl }}" alt="{{ image.title or 'Daily Miku' }}" loading="lazy">
+            <div class="date-display">{{ date }}</div>
+        </div>
+
+        <div class="metadata">
+            {% if image.title %}
+                <h2>{{ image.title }}</h2>
+            {% else %}
+                <h2>Daily Miku</h2>
+            {% endif %}
+
+            {% if image.description %}
+                <div class="metadata-item">
+                    <div class="metadata-label">Description</div>
+                    <div class="metadata-value">{{ image.description }}</div>
+                </div>
+            {% endif %}
+
+            {% if image.note %}
+                <div class="metadata-item">
+                    <div class="metadata-label">Note</div>
+                    <div class="metadata-value">{{ image.note }}</div>
+                </div>
+            {% endif %}
+
+            {% if image.sourceUrl %}
+                <div class="metadata-item">
+                    <div class="metadata-label">Source</div>
+                    <div class="metadata-value">
+                        <a href="{{ image.sourceUrl }}" target="_blank" rel="noopener noreferrer">
+                            {% if image.domain %}{{ image.domain }}{% else %}View Original{% endif %} ↗
+                        </a>
+                    </div>
+                </div>
+            {% endif %}
+
+            {% if image.tags %}
+                <div class="metadata-item">
+                    <div class="metadata-label">Tags</div>
+                    <div class="tags">
+                        {% for tag in image.tags %}
+                            <span class="tag">{{ tag }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="navigation">
+            {% if prev_date %}
+                <a href="/{{ prev_date }}" class="nav-btn">← Previous</a>
+            {% else %}
+                <button class="nav-btn" disabled>← Previous</button>
+            {% endif %}
+            
+            {% if next_date %}
+                <a href="/{{ next_date }}" class="nav-btn">Next →</a>
+            {% else %}
+                <button class="nav-btn" disabled>Next →</button>
+            {% endif %}
+        </div>
+
+        <div style="text-align: center; margin-top: 2rem;">
+            <a href="/" class="nav-btn nav-btn-secondary">← Back to Today</a>
+            <a href="/random" class="nav-btn nav-btn-secondary" style="margin-left: 1rem;">Random Image 🎲</a>
+        </div>
+
+    {% else %}
+        <div class="empty-state">
+            <h2>No Image Found</h2>
+            <p>No daily miku image for {{ date }}</p>
+            <a href="/today" class="nav-btn" style="margin-top: 1rem; display: inline-block;">Go to Today</a>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

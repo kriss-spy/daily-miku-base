@@ -6,7 +6,9 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from jinja2 import Environment, PackageLoader
 
 from .raindrop import get_client
 
@@ -14,6 +16,12 @@ app = FastAPI(
     title="daily-miku-base API",
     description="API for daily Miku images from raindrop.io",
     version="0.1.0",
+)
+
+# Set up Jinja2 template environment
+template_env = Environment(
+    loader=PackageLoader("daily_miku", "templates"),
+    autoescape=True,
 )
 
 # CORS configuration
@@ -26,9 +34,49 @@ app.add_middleware(
 )
 
 
-@app.get("/")
-async def root():
-    """Root endpoint with API info."""
+@app.get("/", response_class=HTMLResponse)
+async def root_html():
+    """Root HTML page redirects to today."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    return RedirectResponse(url=f"/{today}", status_code=302)
+
+
+@app.get("/{date}", response_class=HTMLResponse)
+async def get_image_page(date: str):
+    """
+    Display image page for a specific date.
+    
+    Args:
+        date: Date in YYYY-MM-DD format
+    
+    Returns:
+        Rendered HTML page with image and metadata
+    """
+    client = get_client()
+    item = client.get_by_date(date)
+    
+    if not item:
+        template = template_env.get_template("image.html")
+        return template.render(image=None, date=date, prev_date=None, next_date=None)
+    
+    image_data = client.format_response(item, date)
+    
+    # Calculate prev/next dates
+    try:
+        date_obj = datetime.strptime(date, "%Y-%m-%d")
+        prev_date = (date_obj - timedelta(days=1)).strftime("%Y-%m-%d")
+        next_date = (date_obj + timedelta(days=1)).strftime("%Y-%m-%d")
+    except ValueError:
+        prev_date = None
+        next_date = None
+    
+    template = template_env.get_template("image.html")
+    return template.render(image=image_data, date=date, prev_date=prev_date, next_date=next_date)
+
+
+@app.get("/root", response_class=JSONResponse)
+async def root_json():
+    """JSON API root endpoint with API info."""
     return {
         "name": "daily-miku-base API",
         "version": "0.1.0",
