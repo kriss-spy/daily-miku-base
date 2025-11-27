@@ -3,7 +3,7 @@
 import logging
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 import requests
@@ -17,6 +17,10 @@ RAINDROP_TOKEN = os.getenv("RAINDROP_TOKEN")
 RAINDROP_TAG = os.getenv("RAINDROP_TAG", "daily-miku")
 RAINDROP_CACHE_TTL = int(os.getenv("RAINDROP_CACHE_TTL", "300"))  # 5 minutes default
 BASE_URL = "https://api.raindrop.io/rest/v1"
+
+# Timezone: UTC+8 for Asia
+TIMEZONE_OFFSET = timedelta(hours=8)
+LOCAL_TZ = timezone(TIMEZONE_OFFSET)
 
 
 class SimpleCache:
@@ -148,10 +152,10 @@ class RaindropClient:
 
     def get_by_date(self, date: str) -> Optional[dict]:
         """
-        Get daily miku for a specific date.
+        Get daily miku for a specific date (in UTC+8 timezone).
 
         Args:
-            date: Date string in YYYY-MM-DD format
+            date: Date string in YYYY-MM-DD format (UTC+8)
 
         Returns:
             Raindrop item dict or None if not found
@@ -168,10 +172,10 @@ class RaindropClient:
         for item in items:
             created_str = item.get("created", "")
             if created_str:
-                # Parse ISO 8601 timestamp
-                created_date = datetime.fromisoformat(
-                    created_str.replace("Z", "+00:00")
-                ).date()
+                # Parse ISO 8601 timestamp and convert UTC to UTC+8
+                utc_time = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
+                local_time = utc_time.astimezone(LOCAL_TZ)
+                created_date = local_time.date()
 
                 if created_date == target_date:
                     return item
@@ -179,8 +183,8 @@ class RaindropClient:
         return None
 
     def get_today(self) -> Optional[dict]:
-        """Get today's daily miku."""
-        today = datetime.now().strftime("%Y-%m-%d")
+        """Get today's daily miku (in UTC+8 timezone)."""
+        today = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d")
         return self.get_by_date(today)
 
     def format_response(self, item: dict, date: Optional[str] = None) -> dict:
@@ -189,7 +193,7 @@ class RaindropClient:
 
         Args:
             item: Raw raindrop item from API
-            date: Optional date string (YYYY-MM-DD)
+            date: Optional date string (YYYY-MM-DD in UTC+8)
 
         Returns:
             Formatted response dict
@@ -197,11 +201,13 @@ class RaindropClient:
         if not item:
             return {}
 
-        # Extract date from created timestamp if not provided
+        # Extract date from created timestamp if not provided (convert UTC to UTC+8)
         if not date and item.get("created"):
-            date = datetime.fromisoformat(
+            utc_time = datetime.fromisoformat(
                 item["created"].replace("Z", "+00:00")
-            ).strftime("%Y-%m-%d")
+            )
+            local_time = utc_time.astimezone(LOCAL_TZ)
+            date = local_time.strftime("%Y-%m-%d")
 
         return {
             "date": date,

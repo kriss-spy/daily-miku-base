@@ -2,10 +2,8 @@ name: Daily Miku Email
 
 on:
   schedule:
-    # Primary: 02:00 UTC = 10:00 AM UTC+8 (Asia timezone)
-    - cron: '0 2 * * *'
-    # Retry: 14:00 UTC = 10:00 PM UTC+8 (fallback if morning send failed)
-    - cron: '0 14 * * *'
+    # Run every day at 00:00 UTC (adjust time as needed)
+    - cron: '0 0 * * *'
   workflow_dispatch:  # Allow manual trigger
 
 jobs:
@@ -44,11 +42,6 @@ jobs:
           source .venv/bin/activate
           daily-miku send-email
       
-      - name: Log workflow info
+      - name: Log result
         if: always()
-        run: |
-          echo "=== Daily Miku Email Workflow ==="
-          echo "Run Time (UTC): $(date -u '+%Y-%m-%d %H:%M:%S')"
-          echo "Asia Time (UTC+8): $(date -d '+8 hours' '+%Y-%m-%d %H:%M:%S')"
-          echo "Cron Schedule: 02:00 UTC (10 AM UTC+8) and 14:00 UTC (10 PM UTC+8)"
-          echo "=== End Workflow ===="
+        run: echo "Daily Miku email sent"
