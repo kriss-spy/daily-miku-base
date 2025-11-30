@@ -3,10 +3,12 @@
 import os
 import re
 import smtplib
+from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional
 
+import requests
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -33,21 +35,25 @@ def is_valid_email(email: str) -> bool:
     return bool(re.match(pattern, email))
 
 
-def create_html_template(data: dict) -> str:
+def create_html_template(data: dict, use_cid: bool = True) -> str:
     """
     Create simple HTML email template.
 
     Args:
         data: Daily miku data dict with imageUrl, sourceUrl, title, etc.
+        use_cid: If True, use cid:miku_image for embedded image (default)
 
     Returns:
         HTML string
     """
     date = data.get("date", "")
-    image_url = data.get("coverUrl", "")  # Use Raindrop CDN URL
+    image_url = data.get("coverUrl", "")  # Fallback to Raindrop CDN URL
     source_url = data.get("sourceUrl", "")
     title = data.get("title", "Daily Miku")
     description = data.get("description", "")
+    
+    # Use cid for embedded image or direct URL as fallback
+    img_src = "cid:miku_image" if use_cid and image_url else image_url
 
     html = f"""
 <!DOCTYPE html>
@@ -65,7 +71,7 @@ def create_html_template(data: dict) -> str:
         </div>
         
         <div style="padding: 20px;">
-            {f'<img src="{image_url}" alt="Daily Miku" style="width: 100%; height: auto; border-radius: 4px; display: block;">' if image_url else ''}
+            {f'<img src="{img_src}" alt="Daily Miku" style="width: 100%; height: auto; border-radius: 4px; display: block;">' if img_src else ''}
             
             <h2 style="color: #333; margin: 20px 0 10px 0;">{title}</h2>
             
@@ -90,15 +96,17 @@ def send_email(
     html_body: str,
     to_email: Optional[str] = None,
     from_email: Optional[str] = None,
+    image_url: Optional[str] = None,
 ) -> bool:
     """
-    Send HTML email via SMTP.
+    Send HTML email via SMTP with optional embedded image.
 
     Args:
         subject: Email subject
         html_body: HTML content
         to_email: Recipient email (default: EMAIL_TO from env)
         from_email: Sender email (default: EMAIL_FROM from env)
+        image_url: Optional image URL to download and embed
 
     Returns:
         True if sent successfully, False otherwise
@@ -125,14 +133,34 @@ def send_email(
 
     try:
         # Create message
-        msg = MIMEMultipart("alternative")
+        msg = MIMEMultipart("related")
         msg["Subject"] = subject
         msg["From"] = from_email
         msg["To"] = to_email
 
         # Attach HTML
+        msg_alternative = MIMEMultipart("alternative")
+        msg.attach(msg_alternative)
+        
         html_part = MIMEText(html_body, "html")
-        msg.attach(html_part)
+        msg_alternative.attach(html_part)
+
+        # Download and embed image if URL provided
+        if image_url:
+            try:
+                response = requests.get(image_url, timeout=10)
+                response.raise_for_status()
+                
+                # Create image attachment with Content-ID
+                image = MIMEImage(response.content)
+                image.add_header("Content-ID", "<miku_image>")
+                image.add_header("Content-Disposition", "inline", filename="miku.jpg")
+                msg.attach(image)
+                
+                print(f"✓ Image embedded from {image_url[:50]}...")
+            except Exception as e:
+                print(f"⚠ Failed to embed image: {e}")
+                # Continue sending email without embedded image
 
         # Send via SMTP
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
@@ -150,7 +178,7 @@ def send_email(
 
 def send_daily_miku_email(data: dict) -> bool:
     """
-    Send daily miku email with data.
+    Send daily miku email with embedded image.
 
     Args:
         data: Daily miku data dict
@@ -160,6 +188,9 @@ def send_daily_miku_email(data: dict) -> bool:
     """
     date = data.get("date", "today")
     subject = f"Daily Miku - {date}"
-    html_body = create_html_template(data)
+    image_url = data.get("coverUrl", "")
+    
+    # Create HTML with cid reference for embedded image
+    html_body = create_html_template(data, use_cid=True)
 
-    return send_email(subject, html_body)
+    return send_email(subject, html_body, image_url=image_url)
