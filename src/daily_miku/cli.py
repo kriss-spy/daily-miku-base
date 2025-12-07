@@ -1,8 +1,10 @@
 """CLI commands for daily-miku-base."""
 
 import json
+import os
 import sys
 from datetime import datetime
+from pathlib import Path
 
 from . import email as email_module
 from .raindrop import get_client
@@ -84,22 +86,66 @@ def list_recent(limit: int = 10):
 
 
 def send_email():
-    """Send today's daily miku via email."""
-    print("Fetching today's daily miku...")
+    """Send today's daily miku via email with failure tracking."""
+    from datetime import timezone, timedelta
+
+    # Use UTC+8 timezone (Asia)
+    LOCAL_TZ = timezone(timedelta(hours=8))
+    today = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d")
+
+    print(f"Fetching daily miku for {today}...")
     client = get_client()
     item = client.get_today()
 
+    # Check if we have a miku for today
     if not item:
-        today = datetime.now().strftime("%Y-%m-%d")
         print(f"✗ No daily miku found for {today}", file=sys.stderr)
+
+        # Track failure
+        cache_dir = Path.home() / ".cache" / "daily-miku"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        failure_file = cache_dir / f"email-failed-{today}.txt"
+
+        # Count failures
+        failure_count = 0
+        if failure_file.exists():
+            content = failure_file.read_text().strip()
+            try:
+                failure_count = int(content)
+            except ValueError:
+                failure_count = 0
+
+        failure_count += 1
+        failure_file.write_text(str(failure_count))
+
+        print(f"⚠ This is failure #{failure_count} for today")
+
+        # Send warning email on second failure
+        if failure_count >= 2:
+            print("Sending warning email...")
+            if email_module.send_warning_email(
+                today, f"No daily miku found for {today}"
+            ):
+                print("✓ Warning email sent to EMAIL_FROM")
+            else:
+                print("✗ Failed to send warning email", file=sys.stderr)
+
         sys.exit(1)
 
+    # Found miku, send email
     formatted = client.format_response(item)
     print(f"✓ Found: {formatted.get('title', 'Untitled')}")
     print("Sending email...")
 
     if email_module.send_daily_miku_email(formatted):
         print("✓ Email sent successfully!")
+
+        # Clear failure tracking on success
+        cache_dir = Path.home() / ".cache" / "daily-miku"
+        failure_file = cache_dir / f"email-failed-{today}.txt"
+        if failure_file.exists():
+            failure_file.unlink()
+            print("✓ Cleared failure tracking")
     else:
         print("✗ Failed to send email", file=sys.stderr)
         sys.exit(1)

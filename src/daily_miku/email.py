@@ -51,7 +51,7 @@ def create_html_template(data: dict, use_cid: bool = True) -> str:
     source_url = data.get("sourceUrl", "")
     title = data.get("title", "Daily Miku")
     description = data.get("description", "")
-    
+
     # Use cid for embedded image or direct URL as fallback
     img_src = "cid:miku_image" if use_cid and image_url else image_url
 
@@ -141,7 +141,7 @@ def send_email(
         # Attach HTML
         msg_alternative = MIMEMultipart("alternative")
         msg.attach(msg_alternative)
-        
+
         html_part = MIMEText(html_body, "html")
         msg_alternative.attach(html_part)
 
@@ -150,13 +150,13 @@ def send_email(
             try:
                 response = requests.get(image_url, timeout=10)
                 response.raise_for_status()
-                
+
                 # Create image attachment with Content-ID
                 image = MIMEImage(response.content)
                 image.add_header("Content-ID", "<miku_image>")
                 image.add_header("Content-Disposition", "inline", filename="miku.jpg")
                 msg.attach(image)
-                
+
                 print(f"✓ Image embedded from {image_url[:50]}...")
             except Exception as e:
                 print(f"⚠ Failed to embed image: {e}")
@@ -189,8 +189,123 @@ def send_daily_miku_email(data: dict) -> bool:
     date = data.get("date", "today")
     subject = f"Daily Miku - {date}"
     image_url = data.get("coverUrl", "")
-    
+
     # Create HTML with cid reference for embedded image
     html_body = create_html_template(data, use_cid=True)
 
     return send_email(subject, html_body, image_url=image_url)
+
+
+def send_warning_email(date: str, reason: str = "No daily miku found") -> bool:
+    """
+    Send warning email to EMAIL_FROM when daily email fails.
+
+    Args:
+        date: The date that failed
+        reason: Reason for failure
+
+    Returns:
+        True if warning sent successfully
+    """
+    if not EMAIL_FROM:
+        print("⚠ EMAIL_FROM not set, cannot send warning")
+        return False
+
+    subject = f"⚠️ Daily Miku Failed - {date}"
+
+    html_body = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body {{
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                line-height: 1.6;
+                color: #333;
+                max-width: 600px;
+                margin: 0 auto;
+                padding: 20px;
+            }}
+            .warning-box {{
+                background: #fff3cd;
+                border: 2px solid #ffc107;
+                border-radius: 8px;
+                padding: 20px;
+                margin: 20px 0;
+            }}
+            .warning-icon {{
+                font-size: 48px;
+                text-align: center;
+                margin-bottom: 10px;
+            }}
+            h1 {{
+                color: #856404;
+                margin-top: 0;
+            }}
+            .detail {{
+                background: #f8f9fa;
+                padding: 15px;
+                border-radius: 5px;
+                margin: 15px 0;
+            }}
+            .action {{
+                background: #007bff;
+                color: white;
+                padding: 12px 24px;
+                text-decoration: none;
+                border-radius: 5px;
+                display: inline-block;
+                margin-top: 15px;
+            }}
+            .footer {{
+                margin-top: 30px;
+                padding-top: 20px;
+                border-top: 1px solid #dee2e6;
+                font-size: 12px;
+                color: #6c757d;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="warning-box">
+            <div class="warning-icon">⚠️</div>
+            <h1>Daily Miku Email Failed</h1>
+            <p>The automated daily miku email could not be sent for <strong>{date}</strong>.</p>
+            
+            <div class="detail">
+                <strong>Reason:</strong><br>
+                {reason}
+            </div>
+            
+            <div class="detail">
+                <strong>What to check:</strong>
+                <ul>
+                    <li>Did you add a bookmark with the <code>#daily-miku</code> tag in Raindrop.io today?</li>
+                    <li>Is the bookmark's "Saved" date set to today ({date})?</li>
+                    <li>Does the bookmark have a cover image?</li>
+                </ul>
+            </div>
+            
+            <a href="https://app.raindrop.io/" class="action">Go to Raindrop.io</a>
+        </div>
+        
+        <div class="footer">
+            This is an automated warning from your Daily Miku system.<br>
+            If you continue receiving this, check your GitHub Actions logs for more details.
+        </div>
+    </body>
+    </html>
+    """
+
+    try:
+        # Send warning to EMAIL_FROM account
+        return send_email(
+            subject=subject,
+            html_body=html_body,
+            to_email=EMAIL_FROM,
+            from_email=EMAIL_FROM,
+            image_url=None,
+        )
+    except Exception as e:
+        print(f"✗ Failed to send warning email: {e}")
+        return False

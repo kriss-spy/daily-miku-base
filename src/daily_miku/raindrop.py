@@ -203,9 +203,7 @@ class RaindropClient:
 
         # Extract date from created timestamp if not provided (convert UTC to UTC+8)
         if not date and item.get("created"):
-            utc_time = datetime.fromisoformat(
-                item["created"].replace("Z", "+00:00")
-            )
+            utc_time = datetime.fromisoformat(item["created"].replace("Z", "+00:00"))
             local_time = utc_time.astimezone(LOCAL_TZ)
             date = local_time.strftime("%Y-%m-%d")
 
