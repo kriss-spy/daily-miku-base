@@ -150,7 +150,6 @@ class TestRaindropClient:
 
         # Use the same timezone logic as the application
         now_utc8 = datetime.now(LOCAL_TZ)
-        today = now_utc8.strftime("%Y-%m-%d")
 
         # Create a timestamp that will result in today's date when converted to UTC+8
         # We can just use the current time in UTC+8 and convert back to UTC for the API format

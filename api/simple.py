@@ -1,7 +1,6 @@
 """Simple Vercel serverless function without complex dependencies."""
 
 import json
-import os
 from http.server import BaseHTTPRequestHandler
 
 

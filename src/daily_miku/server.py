@@ -1,10 +1,8 @@
 """FastAPI server for daily-miku-base API."""
 
-import logging
 import os
 import random
 from datetime import datetime, timedelta
-from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -58,7 +56,7 @@ async def log_request_middleware(request: Request, call_next):
 
     # Log incoming request
     logger.info(
-        f"Request started",
+        "Request started",
         extra={
             "request_id": request_id,
             "method": request.method,
@@ -72,7 +70,7 @@ async def log_request_middleware(request: Request, call_next):
 
         # Log response
         logger.info(
-            f"Request completed",
+            "Request completed",
             extra={
                 "request_id": request_id,
                 "method": request.method,

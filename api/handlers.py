@@ -32,7 +32,7 @@ try:
                 if "=" in line and not line.startswith("#"):
                     key, value = line.strip().split("=", 1)
                     os.environ[key] = value
-except:
+except Exception:
     pass
 
 
@@ -69,7 +69,7 @@ def get_raindrops(limit=10):
                     utc_time = datetime.fromisoformat(created.replace("Z", "+00:00"))
                     local_time = utc_time.astimezone(timezone(timedelta(hours=8)))
                     date = local_time.strftime("%Y-%m-%d")
-                except:
+                except (ValueError, TypeError):
                     date = created.split("T")[0] if "T" in created else created
             else:
                 date = ""

@@ -2,11 +2,10 @@
 
 import os
 from datetime import datetime
-from unittest.mock import patch
 
 import pytest
 import requests_mock
-from fastapi.testclient import TestClient
+from starlette.testclient import TestClient
 
 # Mock environment before importing the app
 os.environ["RAINDROP_TOKEN"] = "test_token_123"

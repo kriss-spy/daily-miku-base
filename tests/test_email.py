@@ -6,6 +6,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+# Mock environment before importing the email module
+os.environ.update(
+    {
+        "SMTP_HOST": "smtp.example.com",
+        "SMTP_PORT": "587",
+        "SMTP_USER": "test@example.com",
+        "SMTP_PASSWORD": "test_password",
+        "EMAIL_FROM": "test@example.com",
+        "EMAIL_TO": "recipient@example.com",
+    }
+)
+
 from daily_miku.email import (
     create_html_template,
     is_valid_email,
@@ -17,18 +29,8 @@ from daily_miku.email import (
 @pytest.fixture
 def mock_smtp_env():
     """Mock SMTP environment variables."""
-    with patch.dict(
-        os.environ,
-        {
-            "SMTP_HOST": "smtp.example.com",
-            "SMTP_PORT": "587",
-            "SMTP_USER": "test@example.com",
-            "SMTP_PASSWORD": "test_password",
-            "EMAIL_FROM": "test@example.com",
-            "EMAIL_TO": "recipient@example.com",
-        },
-    ):
-        yield
+    # Environment is already set up at module import time
+    yield
 
 
 @pytest.fixture
@@ -141,7 +143,6 @@ class TestSendEmail:
             patch("daily_miku.email.EMAIL_TO", "recipient@example.com"),
             patch("smtplib.SMTP") as mock_smtp,
         ):
-
             mock_server = MagicMock()
             mock_smtp.return_value.__enter__.return_value = mock_server
 

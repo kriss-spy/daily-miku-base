@@ -71,13 +71,13 @@ def create_html_template(data: dict, use_cid: bool = True) -> str:
         </div>
         
         <div style="padding: 20px;">
-            {f'<img src="{img_src}" alt="Daily Miku" style="width: 100%; height: auto; border-radius: 4px; display: block;">' if img_src else ''}
+            {f'<img src="{img_src}" alt="Daily Miku" style="width: 100%; height: auto; border-radius: 4px; display: block;">' if img_src else ""}
             
             <h2 style="color: #333; margin: 20px 0 10px 0;">{title}</h2>
             
-            {f'<p style="color: #666; line-height: 1.6;">{description}</p>' if description else ''}
+            {f'<p style="color: #666; line-height: 1.6;">{description}</p>' if description else ""}
             
-            {f'<a href="{source_url}" style="display: inline-block; margin-top: 20px; padding: 12px 24px; background-color: #667eea; color: white; text-decoration: none; border-radius: 4px; font-weight: bold;">View Source</a>' if source_url else ''}
+            {f'<a href="{source_url}" style="display: inline-block; margin-top: 20px; padding: 12px 24px; background-color: #667eea; color: white; text-decoration: none; border-radius: 4px; font-weight: bold;">View Source</a>' if source_url else ""}
         </div>
         
         <div style="padding: 20px; background-color: #f9f9f9; text-align: center; color: #999; font-size: 12px;">
