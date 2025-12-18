@@ -2,7 +2,7 @@
 
 import os
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,7 +15,7 @@ from .logging_config import (
     set_request_id,
     get_request_id,
 )
-from .raindrop import get_client
+from .raindrop import get_client, LOCAL_TZ
 
 # Set up logging
 logger = setup_logging(os.getenv("LOG_LEVEL", "INFO"))
@@ -152,7 +152,7 @@ async def api_root():
 @app.get("/api/today")
 async def get_today_api():
     """Get today's image (JSON API)."""
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d")
     client = get_client()
     item = client.get_by_date(today)
 
@@ -411,7 +411,7 @@ async def get_image_file(date: str):
 @app.get("/today")
 async def get_today_html():
     """Redirect to today's image page."""
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d")
     return RedirectResponse(url=f"/{today}", status_code=307)
 
 
