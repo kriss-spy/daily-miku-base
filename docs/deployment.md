@@ -4,7 +4,7 @@
 
 daily-miku-base is deployed using:
 
-- **Vercel** — Frontend + Python API backend
+- **Netlify** — Frontend + Python API backend
 - **GitHub Actions** — Daily scheduled tasks (email, fetch)
 - **Raindrop.io CDN** — Image hosting (no local storage)
 - **Namecheap DNS** — Domain management for `dailymiku.dev`
@@ -12,51 +12,26 @@ daily-miku-base is deployed using:
 ## Prerequisites
 
 - GitHub repository pushed and up-to-date
-- Vercel account (free tier is sufficient)
+- Netlify account (free tier is sufficient)
 - Domain `dailymiku.dev` registered on Namecheap
 - Raindrop.io test token
 
-## 1. Vercel Setup
+## 1. Netlify Setup
 
 ### Connect Repository
 
-1. Go to [vercel.com](https://vercel.com) and sign in
-2. Click "Add New Project"
-3. Import your GitHub repository: `kriss-spy/daily-miku-base`
-4. Configure project settings:
-   - **Framework Preset**: Other (or Python if available)
-   - **Root Directory**: `./`
-   - **Build Command**: Leave empty (no build needed for API-only)
-   - **Output Directory**: Leave empty
-
-### Configure Python Runtime
-
-Create `vercel.json` in project root:
-
-```json
-{
-  "builds": [
-    {
-      "src": "api/**/*.py",
-      "use": "@vercel/python"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/api/index.py"
-    }
-  ]
-}
-```
+1. Go to [netlify.com](https://netlify.com) and sign in
+2. Click "Add new site" → "Import an existing project"
+3. Connect GitHub: `kriss-spy/daily-miku-base`
+4. Configure build settings:
+   - **Base directory**: (leave empty)
+   - **Build command**: (leave empty, no build needed)
+   - **Publish directory**: (leave empty, functions only)
+   - **Functions directory**: `api`
 
 ### Set Environment Variables
 
-In Vercel dashboard → Project Settings → Environment Variables:
+In Netlify dashboard → Site settings → Environment variables:
 
 ```
 RAINDROP_TOKEN=your_raindrop_token_here
@@ -71,16 +46,7 @@ EMAIL_TO=recipient@example.com
 
 ### Deploy
 
-```bash
-# Install Vercel CLI (optional, for local testing)
-npm install -g vercel
-
-# Deploy from CLI
-vercel --prod
-
-# Or push to GitHub main branch (auto-deploys)
-git push origin main
-```
+Push to GitHub main branch (auto-deploys)
 
 ## 2. Domain Configuration
 
@@ -89,28 +55,27 @@ git push origin main
 1. Log into Namecheap
 2. Go to Domain List → `dailymiku.dev` → Manage
 3. Navigate to "Advanced DNS" tab
-4. Add/update DNS records:
+4. Update DNS records as instructed by Netlify:
 
-**For Vercel:**
+**For Netlify (apex domain):**
+
+Use custom nameservers provided by Netlify (e.g., dns1.p01.nsone.net, etc.)
+
+**For www subdomain (optional):**
 
 ```
-Type: CNAME
-Host: @
-Value: cname.vercel-dns.com.
-TTL: Automatic
-
 Type: CNAME
 Host: www
-Value: cname.vercel-dns.com.
+Value: [your-netlify-site].netlify.app
 TTL: Automatic
 ```
 
-### Vercel Domain Setup
+### Netlify Domain Setup
 
-1. In Vercel project dashboard → Settings → Domains
-2. Add domain: `dailymiku.dev`
+1. In Netlify site dashboard → Site settings → Domain management
+2. Add custom domain: `dailymiku.dev`
 3. Add domain: `www.dailymiku.dev` (optional)
-4. Vercel will verify DNS configuration
+4. Netlify will verify DNS configuration
 5. SSL certificate is provisioned automatically (Let's Encrypt)
 
 **DNS propagation** takes 5-60 minutes.
@@ -248,9 +213,9 @@ curl https://dailymiku.dev/2025-11-26
 
 ## 6. Monitoring & Logs
 
-### Vercel Logs
+### Netlify Logs
 
-- Dashboard → Project → Deployments → Click deployment → Function Logs
+- Dashboard → Site → Functions → Click function → View logs
 - View real-time logs for API requests
 
 ### GitHub Actions Logs
@@ -279,7 +244,7 @@ self.send_header('Cache-Control', 'public, max-age=86400')  # 24 hours
 
 ### CDN
 
-Vercel automatically uses CDN for static assets and API responses.
+Netlify automatically uses CDN for static assets and API responses.
 
 ### Rate Limiting
 
@@ -299,23 +264,23 @@ def get_daily_miku(date: str):
 
 ### Rollback Deployment
 
-In Vercel dashboard:
+In Netlify dashboard:
 
-1. Go to Deployments
+1. Go to Deploys
 2. Find previous working deployment
-3. Click "..." → "Promote to Production"
+3. Click "..." → "Restore to this deploy"
 
 ### Backup
 
 - **Code**: Stored in GitHub (already backed up)
 - **Images**: Stored on Raindrop.io CDN
-- **Environment variables**: Export from Vercel settings periodically
+- **Environment variables**: Export from Netlify settings periodically
 
 ## Troubleshooting
 
 **"Function invocation failed"**:
 
-- Check Vercel function logs
+- Check Netlify function logs
 - Verify environment variables are set
 - Check Python dependencies in `api/requirements.txt`
 
@@ -339,7 +304,7 @@ In Vercel dashboard:
 
 ## Cost Estimate
 
-- **Vercel**: Free tier (100GB bandwidth, 100 hours function time)
+- **Netlify**: Free tier (100GB bandwidth, 100 hours function time)
 - **GitHub Actions**: Free tier (2,000 minutes/month)
 - **Domain**: $10-15/year (Namecheap)
 - **Raindrop.io**: Free tier (permanent copy requires PRO: $28/year)
