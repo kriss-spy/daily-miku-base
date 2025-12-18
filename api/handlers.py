@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler
 import requests
+from datetime import datetime, timezone, timedelta
 
 # Add src directory to Python path
 current_dir = Path(__file__).resolve().parent
@@ -22,7 +23,7 @@ for path in possible_src_paths:
 if src_path:
     sys.path.insert(0, str(src_path))
 
-# Load environment variables manually (no dotenv dependency)
+# Load environment variables manually
 try:
     env_path = Path(__file__).parent.parent / ".env"
     if env_path.exists():
@@ -35,9 +36,8 @@ except:
     pass
 
 
-# Simple raindrop client
-def get_today_raindrop():
-    """Get today's raindrop with minimal dependencies."""
+def get_raindrops(limit=10):
+    """Get raindrops with minimal dependencies."""
     token = os.getenv("RAINDROP_TOKEN")
     tag = os.getenv("RAINDROP_TAG", "daily-miku")
 
@@ -46,7 +46,7 @@ def get_today_raindrop():
 
     try:
         headers = {"Authorization": f"Bearer {token}"}
-        params = {"search": f"#{tag}", "perpage": 10, "sort": "-created"}
+        params = {"search": f"#{tag}", "perpage": limit, "sort": "-created"}
 
         response = requests.get(
             "https://api.raindrop.io/rest/v1/raindrops/0",
@@ -58,22 +58,52 @@ def get_today_raindrop():
         data = response.json()
         items = data.get("items", [])
 
-        if items:
-            item = items[0]
-            return {
-                "date": "2025-01-15",  # Would extract from timestamp
+        # Format items
+        formatted_items = []
+        for item in items:
+            # Extract date from created timestamp
+            created = item.get("created", "")
+            if created:
+                # Parse ISO 8601 and convert to local date
+                try:
+                    utc_time = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                    local_time = utc_time.astimezone(timezone(timedelta(hours=8)))
+                    date = local_time.strftime("%Y-%m-%d")
+                except:
+                    date = created.split("T")[0] if "T" in created else created
+            else:
+                date = ""
+
+            formatted_item = {
+                "date": date,
                 "title": item.get("title", ""),
                 "cover": item.get("cover", ""),
                 "link": item.get("link", ""),
                 "excerpt": item.get("excerpt", ""),
                 "domain": item.get("domain", ""),
                 "tags": item.get("tags", []),
+                "raindropId": item.get("_id"),
+                "timestamp": created,
             }
-        else:
-            return {"error": "No raindrops found"}
+            formatted_items.append(formatted_item)
+
+        return formatted_items
 
     except Exception as e:
         return {"error": str(e)}
+
+
+def get_today_raindrop():
+    """Get today's raindrop."""
+    items = get_raindrops(10)
+    if isinstance(items, dict) and "error" in items:
+        return items
+
+    # Get first item (most recent)
+    if items:
+        return items[0]
+    else:
+        return {"error": "No raindrops found"}
 
 
 class handler(BaseHTTPRequestHandler):
@@ -109,7 +139,7 @@ class handler(BaseHTTPRequestHandler):
         self.send_header("Content-type", "application/json")
         self.end_headers()
 
-        result = get_today_raindrop()  # Simplified - would get multiple items
+        result = get_raindrops(10)
         self.wfile.write(json.dumps(result, default=str).encode())
 
     def home(self):
