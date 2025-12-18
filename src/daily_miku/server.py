@@ -479,6 +479,10 @@ async def get_random_page():
 @app.get("/{date}", response_class=HTMLResponse)
 async def get_image_page(date: str):
     """Display image page for a specific date."""
+    # Prevent empty date from matching root path
+    if not date or not date.strip():
+        return RedirectResponse(url="/today", status_code=307)
+
     client = get_client()
     item = client.get_by_date(date)
 
