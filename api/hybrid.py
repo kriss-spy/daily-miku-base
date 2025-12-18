@@ -108,16 +108,46 @@ def get_today_raindrop():
         return {"error": "No raindrops found"}
 
 
-def generate_home_html(today_data):
-    """Generate home page HTML."""
-    if isinstance(today_data, dict) and "error" in today_data:
+def get_raindrop_by_date(date_str):
+    """Get raindrop for specific date."""
+    items = get_raindrops(50)  # Get more items to search
+    if isinstance(items, dict) and "error" in items:
+        return items
+
+    # Find item matching the date
+    for item in items:
+        if item.get("date") == date_str:
+            return item
+
+    return {"error": "No miku found for this date"}
+
+
+def is_date_path(path):
+    """Check if path is a valid date format (YYYY-MM-DD)."""
+    if not path:
+        return False
+
+    try:
+        parts = path.split("/")
+        date_str = parts[-1] if parts[-1] else parts[-2] if len(parts) > 1 else path
+
+        # Try to parse as date
+        datetime.strptime(date_str, "%Y-%m-%d")
+        return True
+    except:
+        return False
+
+
+def generate_miku_html(data, page_title="Daily Miku"):
+    """Generate miku page HTML for any data."""
+    if isinstance(data, dict) and "error" in data:
         return f"""
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daily Miku</title>
+    <title>{page_title}</title>
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         body {{ 
@@ -142,10 +172,11 @@ def generate_home_html(today_data):
         </header>
         <div class="empty-state">
             <h2>No Daily Miku Found</h2>
-            <p>Unable to fetch today's Daily Miku image. Please check back later.</p>
-            <p>Error: {today_data.get("error", "Unknown error")}</p>
+            <p>Unable to fetch Daily Miku image. Please check back later.</p>
+            <p>Error: {data.get("error", "Unknown error")}</p>
         </div>
         <div class="nav">
+            <a href="/today">Today</a>
             <a href="/list">View All</a>
             <a href="/api/today">API</a>
         </div>
@@ -160,7 +191,7 @@ def generate_home_html(today_data):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daily Miku - {today_data.get("title", "Today")}</title>
+    <title>{page_title} - {data.get("title", "Daily Miku")}</title>
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         body {{ 
@@ -192,15 +223,16 @@ def generate_home_html(today_data):
             <p>Beautiful Hatsune Miku artwork every day</p>
         </header>
         <div class="image-container">
-            <img src="{today_data.get("cover", "")}" alt="{today_data.get("title", "Daily Miku")}" loading="lazy">
-            <div class="date">{today_data.get("date", "")}</div>
+            <img src="{data.get("cover", "")}" alt="{data.get("title", "Daily Miku")}" loading="lazy">
+            <div class="date">{data.get("date", "")}</div>
         </div>
         <div class="metadata">
-            <h2>{today_data.get("title", "Daily Miku")}</h2>
-            {f'<div class="metadata-item"><div class="metadata-label">Description</div><div class="metadata-value">{today_data.get("excerpt", "")}</div></div>' if today_data.get("excerpt") else ""}
-            {f'<div class="metadata-item"><div class="metadata-label">Source</div><div class="metadata-value"><a href="{today_data.get("link", "")}" target="_blank">View Original</a></div></div>' if today_data.get("link") else ""}
+            <h2>{data.get("title", "Daily Miku")}</h2>
+            {f'<div class="metadata-item"><div class="metadata-label">Description</div><div class="metadata-value">{data.get("excerpt", "")}</div></div>' if data.get("excerpt") else ""}
+            {f'<div class="metadata-item"><div class="metadata-label">Source</div><div class="metadata-value"><a href="{data.get("link", "")}" target="_blank">View Original</a></div></div>' if data.get("link") else ""}
         </div>
         <div class="nav">
+            <a href="/today">Today</a>
             <a href="/list">View All</a>
             <a href="/api/today">API</a>
         </div>
@@ -219,7 +251,9 @@ def generate_list_html(items):
     for item in items[:10]:  # Show first 10 items
         item_html += f"""
         <div style="background: #1e293b; border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem;">
-            <h3 style="color: #9945ff; margin-bottom: 0.5rem;">{item.get("title", "Untitled")}</h3>
+            <h3 style="color: #9945ff; margin-bottom: 0.5rem;">
+                <a href="/{item.get("date", "")}" style="color: #9945ff; text-decoration: none;">{item.get("title", "Untitled")}</a>
+            </h3>
             <div style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 0.5rem;">{item.get("date", "")}</div>
             {f'<p style="color: #e2e8f0; margin-bottom: 1rem;">{item.get("excerpt", "")}</p>' if item.get("excerpt") else ""}
             {f'<a href="{item.get("link", "")}" style="color: #9945ff; text-decoration: none;" target="_blank">View Original</a>' if item.get("link") else ""}
@@ -256,7 +290,7 @@ def generate_list_html(items):
         </header>
         {item_html if item_html else '<div style="text-align: center; padding: 3rem; color: #94a3b8;"><h2>No Images Found</h2><p>Unable to fetch Daily Miku images.</p></div>'}
         <div class="nav">
-            <a href="/">Home</a>
+            <a href="/today">Today</a>
             <a href="/api/list">API</a>
         </div>
     </div>
@@ -278,10 +312,14 @@ class handler(BaseHTTPRequestHandler):
             self.get_today()
         elif path == "/api/list":
             self.get_list()
-        elif path == "/":
-            self.home_page()
+        elif path == "/" or path == "/today":
+            self.today_page()
+        elif path.startswith("/image/"):
+            self.image_page(path.split("/")[-1])
         elif path == "/list":
             self.list_page()
+        elif is_date_path(path):
+            self.date_page(path.lstrip("/"))
         else:
             self.not_found()
 
@@ -309,10 +347,30 @@ class handler(BaseHTTPRequestHandler):
         result = get_raindrops(10)
         self.wfile.write(json.dumps(result, default=str).encode())
 
-    def home_page(self):
-        """Serve home page with today's image."""
+    def today_page(self):
+        """Serve today's page."""
         today_data = get_today_raindrop()
-        html = generate_home_html(today_data)
+        html = generate_miku_html(today_data, "Daily Miku")
+
+        self.send_response(200)
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
+        self.wfile.write(html.encode())
+
+    def date_page(self, date_str):
+        """Serve page for specific date."""
+        data = get_raindrop_by_date(date_str)
+        html = generate_miku_html(data, f"Daily Miku - {date_str}")
+
+        self.send_response(200)
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
+        self.wfile.write(html.encode())
+
+    def image_page(self, date):
+        """Serve specific image page (alias for date page)."""
+        data = get_raindrop_by_date(date)
+        html = generate_miku_html(data, f"Daily Miku - {date}")
 
         self.send_response(200)
         self.send_header("Content-type", "text/html")
