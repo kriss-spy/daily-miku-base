@@ -62,3 +62,6 @@ dmypy.json
 
 # uv
 .uv/
+
+# Local Netlify folder
+.netlify

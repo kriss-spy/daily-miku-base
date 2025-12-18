@@ -1,7 +1,8 @@
 [build]
-  command = "" # Or your build command if applicable
-  publish = "."
-  functions = "api"
+  functions = "netlify/functions"
+
+[functions]
+  included_files = ["src/**"]
 
 [[redirects]]
   from = "/*"

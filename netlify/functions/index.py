@@ -12,8 +12,21 @@ from pathlib import Path
 from mangum import Mangum
 
 # Add src directory to Python path so we can import daily_miku module
-src_path = Path(__file__).parent.parent / "src"
-sys.path.insert(0, str(src_path))
+# Handle both local development and Netlify deployment (flattened or preserved)
+current_dir = Path(__file__).resolve().parent
+possible_src_paths = [
+    current_dir / "src",
+    current_dir.parent / "src",
+    current_dir.parent.parent / "src",
+]
+src_path = None
+for path in possible_src_paths:
+    if path.exists():
+        src_path = path
+        break
+
+if src_path:
+    sys.path.insert(0, str(src_path))
 
 from daily_miku.server import app  # noqa: E402
 
