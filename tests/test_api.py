@@ -180,7 +180,10 @@ class TestTodayEndpoint:
 
     def test_get_today_redirect(self, client):
         """Test today endpoint redirects to today's date."""
-        today = datetime.now().strftime("%Y-%m-%d")
+        from datetime import timedelta, timezone
+
+        LOCAL_TZ = timezone(timedelta(hours=8))
+        today = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d")
         response = client.get("/today", follow_redirects=False)
         assert response.status_code == 307
         assert response.headers["location"] == f"/{today}"
