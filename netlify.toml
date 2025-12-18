@@ -1,2 +1,9 @@
 [build]
+  command = "" # Or your build command if applicable
+  publish = "."
   functions = "api"
+
+[[redirects]]
+  from = "/*"
+  to = "/.netlify/functions/index"
+  status = 200
