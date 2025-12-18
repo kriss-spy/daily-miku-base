@@ -27,7 +27,7 @@ daily-miku-base is deployed using:
    - **Base directory**: (leave empty)
    - **Build command**: (leave empty, no build needed)
    - **Publish directory**: (leave empty, functions only)
-   - **Functions directory**: `netlify/functions`
+   - **Functions directory**: `api`
 
 ### Set Environment Variables
 
@@ -82,15 +82,17 @@ TTL: Automatic
 
 ## 3. API Structure
 
-Organize your Python API in the `netlify/functions/` directory:
+Organize your Python API in the `api/` directory:
 
 ```
-netlify/functions/
+api/
 ├── index.py          # Main entry point (routes)
+├── raindrop.py       # Raindrop API client
+├── utils.py          # Helper functions
 └── requirements.txt  # Dependencies
 ```
 
-**Example `netlify/functions/index.py`**:
+**Example `api/index.py`**:
 
 ```python
 from http.server import BaseHTTPRequestHandler
@@ -280,7 +282,7 @@ In Netlify dashboard:
 
 - Check Netlify function logs
 - Verify environment variables are set
-- Check Python dependencies in `netlify/functions/requirements.txt`
+- Check Python dependencies in `api/requirements.txt`
 
 **Domain not resolving**:
 

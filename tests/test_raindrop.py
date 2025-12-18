@@ -147,22 +147,24 @@ class TestRaindropClient:
     def test_get_today(self, client, sample_raindrop):
         """Test getting today's raindrop."""
         from daily_miku.raindrop import LOCAL_TZ
-        
+
         # Use the same timezone logic as the application
         now_utc8 = datetime.now(LOCAL_TZ)
         today = now_utc8.strftime("%Y-%m-%d")
-        
+
         # Create a timestamp that will result in today's date when converted to UTC+8
         # We can just use the current time in UTC+8 and convert back to UTC for the API format
         # Or simpler: just construct a time that is definitely "today" in UTC+8
-        
+
         # Let's reverse the logic: target date is today (UTC+8)
         # We need a UTC timestamp that converts to this date in UTC+8
         # noon UTC+8 is safe
         noon_utc8 = now_utc8.replace(hour=12, minute=0, second=0, microsecond=0)
         noon_utc = noon_utc8.astimezone(timezone.utc)
-        
-        sample_raindrop["created"] = noon_utc.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+        sample_raindrop["created"] = (
+            noon_utc.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        )
 
         with requests_mock.Mocker() as m:
             m.get(

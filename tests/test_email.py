@@ -134,12 +134,14 @@ class TestSendEmail:
     def test_send_email_success(self, mock_smtp_env):
         """Test successful email sending."""
         # Patch the module-level variables that are read from env
-        with patch("daily_miku.email.SMTP_USER", "test@example.com"), \
-             patch("daily_miku.email.SMTP_PASSWORD", "test_password"), \
-             patch("daily_miku.email.EMAIL_FROM", "test@example.com"), \
-             patch("daily_miku.email.EMAIL_TO", "recipient@example.com"), \
-             patch("smtplib.SMTP") as mock_smtp:
-            
+        with (
+            patch("daily_miku.email.SMTP_USER", "test@example.com"),
+            patch("daily_miku.email.SMTP_PASSWORD", "test_password"),
+            patch("daily_miku.email.EMAIL_FROM", "test@example.com"),
+            patch("daily_miku.email.EMAIL_TO", "recipient@example.com"),
+            patch("smtplib.SMTP") as mock_smtp,
+        ):
+
             mock_server = MagicMock()
             mock_smtp.return_value.__enter__.return_value = mock_server
 
@@ -213,8 +215,10 @@ class TestSendDailyMikuEmail:
         self, mock_smtp_env, sample_miku_data
     ):
         """Test sending to default recipient from env."""
-        with patch("daily_miku.email.EMAIL_TO", "recipient@example.com"), \
-             patch("smtplib.SMTP") as mock_smtp:
+        with (
+            patch("daily_miku.email.EMAIL_TO", "recipient@example.com"),
+            patch("smtplib.SMTP") as mock_smtp,
+        ):
             mock_server = MagicMock()
             mock_smtp.return_value.__enter__.return_value = mock_server
 
