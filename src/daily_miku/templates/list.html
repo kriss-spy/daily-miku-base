@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block title %}Daily Miku - Recent Images{% endblock %}
+
+{% block content %}
+<div class="content">
+    {% if items %}
+    <div class="image-grid">
+        {% for item in items %}
+        <div class="image-card">
+            {% if item.cover %}
+            <img src="{{ item.cover }}" alt="{{ item.title }}" loading="lazy">
+            {% endif %}
+            <div class="card-content">
+                <h3>{{ item.title }}</h3>
+                {% if item.date %}
+                <div class="date-display">{{ item.date }}</div>
+                {% endif %}
+                {% if item.excerpt %}
+                <p>{{ item.excerpt }}</p>
+                {% endif %}
+                {% if item.link %}
+                <a href="{{ item.link }}" class="view-link" target="_blank" rel="noopener">View Original</a>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <h2>No Images Found</h2>
+        <p>Unable to fetch Daily Miku images. Please check back later.</p>
+    </div>
+    {% endif %}
+</div>
+
+<div class="navigation">
+    <a href="/" class="nav-btn nav-btn-secondary">Home</a>
+    <button class="nav-btn" onclick="location.reload()">Refresh</button>
+</div>
+
+<style>
+.image-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 2rem;
+    margin-bottom: 2rem;
+}
+
+.image-card {
+    background: var(--surface);
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    transition: transform 0.2s;
+}
+
+.image-card:hover {
+    transform: translateY(-4px);
+}
+
+.image-card img {
+    width: 100%;
+    height: 200px;
+    object-fit: cover;
+}
+
+.card-content {
+    padding: 1.5rem;
+}
+
+.card-content h3 {
+    color: var(--primary);
+    margin-bottom: 0.5rem;
+    font-size: 1.1rem;
+}
+
+.card-content p {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+}
+
+.view-link {
+    color: var(--primary);
+    text-decoration: none;
+    font-size: 0.9rem;
+    border-bottom: 1px solid rgba(153, 69, 255, 0.3);
+}
+
+.view-link:hover {
+    border-bottom-color: var(--primary);
+}
+</style>
+{% endblock %}

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Daily Miku - {{ title }}{% endblock %}
+
+{% block content %}
+<div class="content">
+    {% if image_url %}
+    <div class="image-container">
+        <img src="{{ image_url }}" alt="{{ title }}" loading="lazy">
+        {% if date %}
+        <div class="date-display">{{ date }}</div>
+        {% endif %}
+    </div>
+
+    <div class="metadata">
+        <h2>{{ title }}</h2>
+        
+        {% if description %}
+        <div class="metadata-item">
+            <div class="metadata-label">Description</div>
+            <div class="metadata-value">{{ description }}</div>
+        </div>
+        {% endif %}
+
+        {% if source_url %}
+        <div class="metadata-item">
+            <div class="metadata-label">Source</div>
+            <div class="metadata-value">
+                <a href="{{ source_url }}" target="_blank" rel="noopener">View Original</a>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if date %}
+        <div class="metadata-item">
+            <div class="metadata-label">Date</div>
+            <div class="metadata-value">{{ date }}</div>
+        </div>
+        {% endif %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <h2>No Daily Miku Found</h2>
+        <p>Unable to fetch today's Daily Miku image. Please check back later.</p>
+    </div>
+    {% endif %}
+</div>
+
+<div class="navigation">
+    <a href="/list" class="nav-btn nav-btn-secondary">View All</a>
+    <button class="nav-btn" onclick="location.reload()">Refresh</button>
+</div>
+{% endblock %}

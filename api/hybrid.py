@@ -1,4 +1,4 @@
-"""Hybrid handler - serves frontend templates and API endpoints."""
+"""Simple frontend handler with basic HTML."""
 
 import json
 import os
@@ -35,29 +35,6 @@ try:
                     os.environ[key] = value
 except:
     pass
-
-
-# Template rendering
-def render_template(template_name, context=None):
-    """Simple template rendering."""
-    if not src_path:
-        return "<h1>Templates directory not found</h1>"
-    template_path = src_path / "daily_miku" / "templates" / template_name
-
-    try:
-        with open(template_path, "r") as f:
-            template_content = f.read()
-
-        if context:
-            # Simple variable replacement ({{ variable }})
-            for key, value in context.items():
-                template_content = template_content.replace(
-                    f"{{{{ {key} }}}}", str(value)
-                )
-
-        return template_content
-    except FileNotFoundError:
-        return f"<h1>Template {template_name} not found</h1>"
 
 
 # API functions
@@ -131,6 +108,163 @@ def get_today_raindrop():
         return {"error": "No raindrops found"}
 
 
+def generate_home_html(today_data):
+    """Generate home page HTML."""
+    if isinstance(today_data, dict) and "error" in today_data:
+        return f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Miku</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{ 
+            background: linear-gradient(135deg, #0f172a 0%, #1a1f3a 100%);
+            color: #e2e8f0; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6; min-height: 100vh;
+        }}
+        .container {{ max-width: 1200px; margin: 0 auto; padding: 2rem; }}
+        header {{ text-align: center; margin-bottom: 3rem; }}
+        h1 {{ font-size: 2.5rem; background: linear-gradient(135deg, #9945ff 0%, #ec4899 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
+        .empty-state {{ text-align: center; padding: 3rem; color: #94a3b8; }}
+        .nav {{ text-align: center; margin-top: 2rem; }}
+        .nav a {{ background: #9945ff; color: white; padding: 1rem 2rem; text-decoration: none; border-radius: 8px; margin: 0 0.5rem; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎵 Daily Miku</h1>
+            <p>Beautiful Hatsune Miku artwork every day</p>
+        </header>
+        <div class="empty-state">
+            <h2>No Daily Miku Found</h2>
+            <p>Unable to fetch today's Daily Miku image. Please check back later.</p>
+            <p>Error: {today_data.get("error", "Unknown error")}</p>
+        </div>
+        <div class="nav">
+            <a href="/list">View All</a>
+            <a href="/api/today">API</a>
+        </div>
+    </div>
+</body>
+</html>
+        """
+
+    return f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Miku - {today_data.get("title", "Today")}</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{ 
+            background: linear-gradient(135deg, #0f172a 0%, #1a1f3a 100%);
+            color: #e2e8f0; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6; min-height: 100vh;
+        }}
+        .container {{ max-width: 1200px; margin: 0 auto; padding: 2rem; }}
+        header {{ text-align: center; margin-bottom: 3rem; }}
+        h1 {{ font-size: 2.5rem; background: linear-gradient(135deg, #9945ff 0%, #ec4899 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
+        .image-container {{ text-align: center; margin-bottom: 2rem; }}
+        .image-container img {{ max-width: 100%; max-height: 600px; border-radius: 8px; }}
+        .metadata {{ background: #1e293b; padding: 2rem; border-radius: 12px; max-width: 600px; margin: 0 auto; }}
+        .metadata h2 {{ color: #9945ff; margin-bottom: 1rem; }}
+        .metadata-item {{ margin-bottom: 1rem; }}
+        .metadata-label {{ color: #94a3b8; font-size: 0.85rem; text-transform: uppercase; }}
+        .metadata-value {{ margin-top: 0.5rem; }}
+        .metadata-value a {{ color: #9945ff; text-decoration: none; }}
+        .nav {{ text-align: center; margin-top: 2rem; }}
+        .nav a {{ background: #9945ff; color: white; padding: 1rem 2rem; text-decoration: none; border-radius: 8px; margin: 0 0.5rem; }}
+        .date {{ color: #94a3b8; margin-top: 1rem; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎵 Daily Miku</h1>
+            <p>Beautiful Hatsune Miku artwork every day</p>
+        </header>
+        <div class="image-container">
+            <img src="{today_data.get("cover", "")}" alt="{today_data.get("title", "Daily Miku")}" loading="lazy">
+            <div class="date">{today_data.get("date", "")}</div>
+        </div>
+        <div class="metadata">
+            <h2>{today_data.get("title", "Daily Miku")}</h2>
+            {f'<div class="metadata-item"><div class="metadata-label">Description</div><div class="metadata-value">{today_data.get("excerpt", "")}</div></div>' if today_data.get("excerpt") else ""}
+            {f'<div class="metadata-item"><div class="metadata-label">Source</div><div class="metadata-value"><a href="{today_data.get("link", "")}" target="_blank">View Original</a></div></div>' if today_data.get("link") else ""}
+        </div>
+        <div class="nav">
+            <a href="/list">View All</a>
+            <a href="/api/today">API</a>
+        </div>
+    </div>
+</body>
+</html>
+    """
+
+
+def generate_list_html(items):
+    """Generate list page HTML."""
+    if isinstance(items, dict) and "error" in items:
+        items = []
+
+    item_html = ""
+    for item in items[:10]:  # Show first 10 items
+        item_html += f"""
+        <div style="background: #1e293b; border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem;">
+            <h3 style="color: #9945ff; margin-bottom: 0.5rem;">{item.get("title", "Untitled")}</h3>
+            <div style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 0.5rem;">{item.get("date", "")}</div>
+            {f'<p style="color: #e2e8f0; margin-bottom: 1rem;">{item.get("excerpt", "")}</p>' if item.get("excerpt") else ""}
+            {f'<a href="{item.get("link", "")}" style="color: #9945ff; text-decoration: none;" target="_blank">View Original</a>' if item.get("link") else ""}
+        </div>
+        """
+
+    return f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Miku - Recent Images</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{ 
+            background: linear-gradient(135deg, #0f172a 0%, #1a1f3a 100%);
+            color: #e2e8f0; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6; min-height: 100vh;
+        }}
+        .container {{ max-width: 1200px; margin: 0 auto; padding: 2rem; }}
+        header {{ text-align: center; margin-bottom: 3rem; }}
+        h1 {{ font-size: 2.5rem; background: linear-gradient(135deg, #9945ff 0%, #ec4899 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
+        .nav {{ text-align: center; margin-top: 2rem; }}
+        .nav a {{ background: #9945ff; color: white; padding: 1rem 2rem; text-decoration: none; border-radius: 8px; margin: 0 0.5rem; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎵 Daily Miku</h1>
+            <p>Recent Daily Miku images</p>
+        </header>
+        {item_html if item_html else '<div style="text-align: center; padding: 3rem; color: #94a3b8;"><h2>No Images Found</h2><p>Unable to fetch Daily Miku images.</p></div>'}
+        <div class="nav">
+            <a href="/">Home</a>
+            <a href="/api/list">API</a>
+        </div>
+    </div>
+</body>
+</html>
+    """
+
+
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         # Parse URL
@@ -146,8 +280,6 @@ class handler(BaseHTTPRequestHandler):
             self.get_list()
         elif path == "/":
             self.home_page()
-        elif path.startswith("/image/"):
-            self.image_page(path.split("/")[-1])
         elif path == "/list":
             self.list_page()
         else:
@@ -180,61 +312,17 @@ class handler(BaseHTTPRequestHandler):
     def home_page(self):
         """Serve home page with today's image."""
         today_data = get_today_raindrop()
-
-        # Handle both dict and error cases
-        if isinstance(today_data, dict) and "error" in today_data:
-            context = {
-                "title": "Daily Miku",
-                "image_url": "",
-                "date": "",
-                "description": "",
-                "source_url": "",
-            }
-        else:
-            context = {
-                "title": today_data.get("title", "Daily Miku")
-                if isinstance(today_data, dict)
-                else "Daily Miku",
-                "image_url": today_data.get("cover", "")
-                if isinstance(today_data, dict)
-                else "",
-                "date": today_data.get("date", "")
-                if isinstance(today_data, dict)
-                else "",
-                "description": today_data.get("excerpt", "")
-                if isinstance(today_data, dict)
-                else "",
-                "source_url": today_data.get("link", "")
-                if isinstance(today_data, dict)
-                else "",
-            }
-
-        html = render_template("home.html", context)
+        html = generate_home_html(today_data)
 
         self.send_response(200)
         self.send_header("Content-type", "text/html")
         self.end_headers()
-        self.wfile.write(html.encode())
-
-    def image_page(self, date):
-        """Serve specific image page."""
-        self.send_response(200)
-        self.send_header("Content-type", "text/html")
-        self.end_headers()
-
-        html = render_template("image.html", {"date": date})
         self.wfile.write(html.encode())
 
     def list_page(self):
         """Serve list page."""
         items = get_raindrops(20)
-
-        if isinstance(items, dict) and "error" in items:
-            context = {"items": []}
-        else:
-            context = {"items": items}
-
-        html = render_template("list.html", context)
+        html = generate_list_html(items)
 
         self.send_response(200)
         self.send_header("Content-type", "text/html")
