@@ -8,8 +8,8 @@
     <div class="image-grid">
         {% for item in items %}
         <div class="image-card">
-            {% if item.cover %}
-            <img src="{{ item.cover }}" alt="{{ item.title }}" loading="lazy">
+            {% if item.coverUrl %}
+            <img src="{{ item.coverUrl }}" alt="{{ item.title }}" loading="lazy">
             {% endif %}
             <div class="card-content">
                 <h3>{{ item.title }}</h3>

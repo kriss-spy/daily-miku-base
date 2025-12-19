@@ -476,6 +476,28 @@ async def get_random_page():
 # ============================================================================
 
 
+@app.get("/list", response_class=HTMLResponse)
+async def get_list_page():
+    """Display recent daily miku images in a list."""
+    client = get_client()
+    items = client.fetch_raindrops(perpage=20)
+
+    formatted_items = []
+    for item in items:
+        created = item.get("created", "")
+        if created:
+            date = datetime.fromisoformat(created.replace("Z", "+00:00")).strftime(
+                "%Y-%m-%d"
+            )
+        else:
+            date = ""
+
+        formatted_items.append(client.format_response(item, date))
+
+    template = template_env.get_template("list.html")
+    return template.render(items=formatted_items)
+
+
 @app.get("/{date}", response_class=HTMLResponse)
 async def get_image_page(date: str):
     """Display image page for a specific date."""
