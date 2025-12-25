@@ -152,10 +152,10 @@ class RaindropClient:
 
     def get_by_date(self, date: str) -> Optional[dict]:
         """
-        Get daily miku for a specific date (in UTC+8 timezone).
+        Get daily miku for a specific date based on when it was saved (in UTC+8 timezone).
 
         Args:
-            date: Date string in YYYY-MM-DD format (UTC+8)
+            date: Date string in YYYY-MM-DD format (UTC+8) - when the raindrop was saved
 
         Returns:
             Raindrop item dict or None if not found
@@ -170,20 +170,20 @@ class RaindropClient:
         items = self.fetch_raindrops(perpage=50)
 
         for item in items:
-            created_str = item.get("created", "")
-            if created_str:
+            lastUpdate_str = item.get("lastUpdate", "")
+            if lastUpdate_str:
                 # Parse ISO 8601 timestamp and convert UTC to UTC+8
-                utc_time = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
+                utc_time = datetime.fromisoformat(lastUpdate_str.replace("Z", "+00:00"))
                 local_time = utc_time.astimezone(LOCAL_TZ)
-                created_date = local_time.date()
+                saved_date = local_time.date()
 
-                if created_date == target_date:
+                if saved_date == target_date:
                     return item
 
         return None
 
     def get_today(self) -> Optional[dict]:
-        """Get today's daily miku (in UTC+8 timezone)."""
+        """Get today's daily miku based on when it was saved (in UTC+8 timezone)."""
         today = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d")
         return self.get_by_date(today)
 
@@ -201,9 +201,9 @@ class RaindropClient:
         if not item:
             return {}
 
-        # Extract date from created timestamp if not provided (convert UTC to UTC+8)
-        if not date and item.get("created"):
-            utc_time = datetime.fromisoformat(item["created"].replace("Z", "+00:00"))
+        # Extract date from lastUpdate timestamp if not provided (convert UTC to UTC+8)
+        if not date and item.get("lastUpdate"):
+            utc_time = datetime.fromisoformat(item["lastUpdate"].replace("Z", "+00:00"))
             local_time = utc_time.astimezone(LOCAL_TZ)
             date = local_time.strftime("%Y-%m-%d")
 

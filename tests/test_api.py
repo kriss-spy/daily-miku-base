@@ -32,6 +32,7 @@ def sample_raindrop():
         "domain": "twitter.com",
         "tags": ["daily-miku", "vocaloid"],
         "created": "2025-01-15T12:00:00.000Z",
+        "lastUpdate": "2025-01-15T12:00:00.000Z",
     }
 
 

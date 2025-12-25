@@ -30,6 +30,7 @@ def sample_raindrop():
         "domain": "twitter.com",
         "tags": ["daily-miku", "vocaloid"],
         "created": "2025-01-15T12:00:00.000Z",
+        "lastUpdate": "2025-01-15T12:00:00.000Z",
     }
 
 
@@ -161,7 +162,7 @@ class TestRaindropClient:
         noon_utc8 = now_utc8.replace(hour=12, minute=0, second=0, microsecond=0)
         noon_utc = noon_utc8.astimezone(timezone.utc)
 
-        sample_raindrop["created"] = (
+        sample_raindrop["lastUpdate"] = (
             noon_utc.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
         )
 
