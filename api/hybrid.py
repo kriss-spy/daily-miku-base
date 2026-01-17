@@ -63,16 +63,16 @@ def get_raindrops(limit=10):
         # Format items
         formatted_items = []
         for item in items:
-            # Extract date from created timestamp
-            created = item.get("created", "")
-            if created:
-                # Parse ISO 8601 and convert to local date
+            # Extract date from lastUpdate timestamp (when the raindrop was saved/updated)
+            lastUpdate = item.get("lastUpdate", "")
+            if lastUpdate:
+                # Parse ISO 8601 and convert to local date (GMT+8)
                 try:
-                    utc_time = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                    utc_time = datetime.fromisoformat(lastUpdate.replace("Z", "+00:00"))
                     local_time = utc_time.astimezone(timezone(timedelta(hours=8)))
                     date = local_time.strftime("%Y-%m-%d")
                 except (ValueError, TypeError):
-                    date = created.split("T")[0] if "T" in created else created
+                    date = lastUpdate.split("T")[0] if "T" in lastUpdate else lastUpdate
             else:
                 date = ""
 
@@ -85,7 +85,7 @@ def get_raindrops(limit=10):
                 "domain": item.get("domain", ""),
                 "tags": item.get("tags", []),
                 "raindropId": item.get("_id"),
-                "timestamp": created,
+                "timestamp": item.get("created", ""),
             }
             formatted_items.append(formatted_item)
 
