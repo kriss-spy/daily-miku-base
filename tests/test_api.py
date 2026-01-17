@@ -5,6 +5,7 @@ from datetime import datetime
 
 import pytest
 import requests_mock
+import respx
 from starlette.testclient import TestClient
 
 # Mock environment before importing the app
@@ -89,13 +90,26 @@ class TestImageMetadataEndpoint:
 
 
 class TestImageFileEndpoint:
-    """Test /image/{date} redirect endpoint."""
+    """Test /image/{date} endpoint that serves images directly."""
 
-    def test_get_image_file_redirect(self, client, mock_raindrop_api):
-        """Test image file endpoint returns redirect."""
-        response = client.get("/image/2025-01-15", follow_redirects=False)
-        assert response.status_code == 307
-        assert response.headers["location"] == "https://cdn.raindrop.io/test/image.jpg"
+    @respx.mock
+    def test_get_image_file_success(self, client, mock_raindrop_api):
+        """Test image file endpoint serves image directly."""
+        # Mock the CDN image fetch with respx (for httpx)
+        fake_image_data = b"fake image content"
+        respx.get("https://cdn.raindrop.io/test/image.jpg").mock(
+            return_value=respx.MockResponse(
+                status_code=200,
+                content=fake_image_data,
+                headers={"content-type": "image/jpeg"},
+            )
+        )
+
+        response = client.get("/image/2025-01-15")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/jpeg"
+        assert response.content == fake_image_data
+        assert "cache-control" in response.headers
 
     def test_get_image_file_not_found(self, client):
         """Test 404 when image not found."""

@@ -25,6 +25,7 @@ dev = [
     "pytest-cov>=4.1.0",
     "requests-mock>=1.11.0",
     "httpx>=0.24.0,<0.27.0",  # for FastAPI TestClient - 0.27+ incompatible with starlette
+    "respx>=0.20.0",  # for mocking httpx requests
     "ruff>=0.6.0",
 ]
 
