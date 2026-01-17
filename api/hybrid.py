@@ -248,15 +248,19 @@ def generate_list_html(items):
         items = []
 
     item_html = ""
-    for item in items[:10]:  # Show first 10 items
+    for item in items[:20]:  # Show first 20 items
+        cover_url = item.get("cover", "")
         item_html += f"""
-        <div style="background: #1e293b; border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem;">
-            <h3 style="color: #9945ff; margin-bottom: 0.5rem;">
-                <a href="/{item.get("date", "")}" style="color: #9945ff; text-decoration: none;">{item.get("title", "Untitled")}</a>
-            </h3>
-            <div style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 0.5rem;">{item.get("date", "")}</div>
-            {f'<p style="color: #e2e8f0; margin-bottom: 1rem;">{item.get("excerpt", "")}</p>' if item.get("excerpt") else ""}
-            {f'<a href="{item.get("link", "")}" style="color: #9945ff; text-decoration: none;" target="_blank">View Original</a>' if item.get("link") else ""}
+        <div style="background: #1e293b; border-radius: 12px; overflow: hidden; margin-bottom: 1.5rem; border: 1px solid rgba(255, 255, 255, 0.1);">
+            {f'<a href="/{item.get("date", "")}"><img src="{cover_url}" style="width: 100%; height: 250px; object-fit: cover; display: block;" alt="{item.get("title", "")}" loading="lazy"></a>' if cover_url else ""}
+            <div style="padding: 1.5rem;">
+                <h3 style="color: #9945ff; margin-bottom: 0.5rem; font-size: 1.1rem;">
+                    <a href="/{item.get("date", "")}" style="color: #9945ff; text-decoration: none;">{item.get("title", "Untitled")}</a>
+                </h3>
+                <div style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 0.75rem;">{item.get("date", "")}</div>
+                {f'<p style="color: #cbd5e1; margin-bottom: 1rem; font-size: 0.9rem;">{item.get("excerpt", "")}</p>' if item.get("excerpt") else ""}
+                {f'<a href="{item.get("link", "")}" style="color: #9945ff; text-decoration: none; font-size: 0.9rem; border-bottom: 1px solid rgba(153, 69, 255, 0.3);" target="_blank">View Original</a>' if item.get("link") else ""}
+            </div>
         </div>
         """
 
@@ -275,11 +279,13 @@ def generate_list_html(items):
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             line-height: 1.6; min-height: 100vh;
         }}
-        .container {{ max-width: 1200px; margin: 0 auto; padding: 2rem; }}
+        .container {{ max-width: 900px; margin: 0 auto; padding: 2rem; }}
         header {{ text-align: center; margin-bottom: 3rem; }}
-        h1 {{ font-size: 2.5rem; background: linear-gradient(135deg, #9945ff 0%, #ec4899 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
+        h1 {{ font-size: 2.5rem; background: linear-gradient(135deg, #9945ff 0%, #ec4899 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 0.5rem; }}
         .nav {{ text-align: center; margin-top: 2rem; }}
-        .nav a {{ background: #9945ff; color: white; padding: 1rem 2rem; text-decoration: none; border-radius: 8px; margin: 0 0.5rem; }}
+        .nav a {{ background: #9945ff; color: white; padding: 1rem 2rem; text-decoration: none; border-radius: 8px; margin: 0 0.5rem; display: inline-block; transition: background 0.2s; }}
+        .nav a:hover {{ background: #8034e6; }}
+        .list-container {{ margin-bottom: 2rem; }}
     </style>
 </head>
 <body>
@@ -288,7 +294,9 @@ def generate_list_html(items):
             <h1>🎵 Daily Miku</h1>
             <p>Recent Daily Miku images</p>
         </header>
+        <div class="list-container">
         {item_html if item_html else '<div style="text-align: center; padding: 3rem; color: #94a3b8;"><h2>No Images Found</h2><p>Unable to fetch Daily Miku images.</p></div>'}
+        </div>
         <div class="nav">
             <a href="/today">Today</a>
             <a href="/api/list">API</a>
@@ -368,14 +376,43 @@ class handler(BaseHTTPRequestHandler):
         self.wfile.write(html.encode())
 
     def image_page(self, date):
-        """Serve specific image page (alias for date page)."""
+        """Serve the actual image file (fetch from Raindrop CDN)."""
         data = get_raindrop_by_date(date)
-        html = generate_miku_html(data, f"Daily Miku - {date}")
 
-        self.send_response(200)
-        self.send_header("Content-type", "text/html")
-        self.end_headers()
-        self.wfile.write(html.encode())
+        if isinstance(data, dict) and "error" in data:
+            self.send_response(404)
+            self.send_header("Content-type", "text/plain")
+            self.end_headers()
+            self.wfile.write(f"No image found for {date}".encode())
+            return
+
+        cover_url = data.get("cover", "")
+        if not cover_url:
+            self.send_response(404)
+            self.send_header("Content-type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"Image URL not available")
+            return
+
+        # Fetch image from Raindrop CDN and serve directly
+        try:
+            response = requests.get(cover_url, timeout=30)
+            response.raise_for_status()
+
+            # Determine content type from response or URL
+            content_type = response.headers.get("content-type", "image/jpeg")
+
+            self.send_response(200)
+            self.send_header("Content-type", content_type)
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self.send_header("Content-Length", str(len(response.content)))
+            self.end_headers()
+            self.wfile.write(response.content)
+        except requests.RequestException as e:
+            self.send_response(502)
+            self.send_header("Content-type", "text/plain")
+            self.end_headers()
+            self.wfile.write(f"Failed to fetch image: {str(e)}".encode())
 
     def list_page(self):
         """Serve list page."""

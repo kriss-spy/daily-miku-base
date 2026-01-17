@@ -4,9 +4,10 @@ import os
 import random
 from datetime import datetime, timedelta, timezone
 
+import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
+from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse, Response
 from jinja2 import Environment, PackageLoader
 
 from .logging_config import (
@@ -389,7 +390,7 @@ async def get_year_images(year: int):
 
 @app.get("/image/{date}")
 async def get_image_file(date: str):
-    """Redirect to the actual image file (Raindrop CDN)."""
+    """Serve the actual image file (proxy from Raindrop CDN)."""
     client = get_client()
     item = client.get_by_date(date)
 
@@ -400,7 +401,26 @@ async def get_image_file(date: str):
     if not cover_url:
         raise HTTPException(status_code=404, detail="Image URL not available")
 
-    return RedirectResponse(url=cover_url, status_code=307)
+    # Fetch image from Raindrop CDN and serve directly
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as http_client:
+            response = await http_client.get(cover_url)
+            response.raise_for_status()
+
+            # Determine content type from response or URL
+            content_type = response.headers.get("content-type", "image/jpeg")
+
+            return Response(
+                content=response.content,
+                media_type=content_type,
+                headers={
+                    "Cache-Control": "public, max-age=86400",  # Cache for 24 hours
+                    "Content-Length": str(len(response.content)),
+                },
+            )
+    except httpx.HTTPError as e:
+        logger.error(f"Failed to fetch image from {cover_url}: {str(e)}")
+        raise HTTPException(status_code=502, detail="Failed to fetch image from CDN")
 
 
 # ============================================================================

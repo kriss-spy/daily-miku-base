@@ -64,7 +64,6 @@ Base domain: `https://dailymiku.dev`
 - `GET /` → Homepage (today's image or latest)
 - `GET /{YYYY-MM-DD}` → Photo view (single image with details)
   - Example: `/2025-11-26` → page showing Nov 26, 2025 image
-- `GET /day/{YYYY-MM-DD}` → Day view (alternative explicit path)
 
 **Time-based Views**
 
@@ -80,7 +79,7 @@ Base domain: `https://dailymiku.dev`
 - `GET /today` → Redirect to today's date
 - `GET /latest` → Most recent image
 - `GET /random` → Random image from archive
-- `GET /archive` → Browse all images (infinite scroll or pagination)
+- `GET /list` → Browse recent images (with image previews)
 
 **API Endpoints (JSON)**
 

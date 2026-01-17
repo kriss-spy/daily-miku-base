@@ -12,6 +12,8 @@ dependencies = [
     "uvicorn==0.24.0",
     "mangum==0.17.0",
     "pydantic==2.5.3",
+    "namecheap-python>=0.2.3",
+    "httpx>=0.24.0,<0.27.0",
 ]
 
 [project.scripts]

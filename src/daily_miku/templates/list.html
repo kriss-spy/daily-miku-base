@@ -16,11 +16,11 @@
                 {% if item.date %}
                 <div class="date-display">{{ item.date }}</div>
                 {% endif %}
-                {% if item.excerpt %}
-                <p>{{ item.excerpt }}</p>
+                {% if item.description %}
+                <p>{{ item.description }}</p>
                 {% endif %}
-                {% if item.link %}
-                <a href="{{ item.link }}" class="view-link" target="_blank" rel="noopener">View Original</a>
+                {% if item.sourceUrl %}
+                <a href="{{ item.sourceUrl }}" class="view-link" target="_blank" rel="noopener">View Original</a>
                 {% endif %}
             </div>
         </div>
