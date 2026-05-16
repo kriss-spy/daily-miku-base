@@ -97,15 +97,17 @@ def get_raindrops(limit=10):
 
 def get_today_raindrop():
     """Get today's raindrop."""
-    items = get_raindrops(10)
+    today = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d")
+    items = get_raindrops(50)
     if isinstance(items, dict) and "error" in items:
         return items
 
-    # Get first item (most recent)
-    if items:
-        return items[0]
-    else:
-        return {"error": "No raindrops found"}
+    # Find item matching today's date
+    for item in items:
+        if item.get("date") == today:
+            return item
+
+    return {"error": "No raindrop found for today"}
 
 
 def get_raindrop_by_date(date_str):
