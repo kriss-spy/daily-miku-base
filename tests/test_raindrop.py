@@ -303,4 +303,4 @@ class TestRaindropClientCaching:
             client.clear_cache()
 
             # Cache should be empty
-            assert client.cache.get("raindrops:daily-miku:50:0:-created") is None
+            assert client.cache.get("raindrops:daily-miku:50:0:-lastUpdate") is None

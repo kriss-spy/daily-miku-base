@@ -95,7 +95,7 @@ class RaindropClient:
         tag: Optional[str] = None,
         perpage: int = 50,
         page: int = 0,
-        sort: str = "-created",
+        sort: str = "-lastUpdate",
     ) -> list[dict]:
         """
         Fetch raindrops with specified tag.
@@ -104,7 +104,7 @@ class RaindropClient:
             tag: Tag to filter by (default: self.tag)
             perpage: Results per page (max 50)
             page: Page number (0-indexed)
-            sort: Sort order ("-created" for newest first)
+            sort: Sort order ("-lastUpdate" for most recently updated first)
 
         Returns:
             List of raindrop items

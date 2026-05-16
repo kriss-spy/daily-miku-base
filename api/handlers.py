@@ -46,7 +46,7 @@ def get_raindrops(limit=10):
 
     try:
         headers = {"Authorization": f"Bearer {token}"}
-        params = {"search": f"#{tag}", "perpage": limit, "sort": "-created"}
+        params = {"search": f"#{tag}", "perpage": limit, "sort": "-lastUpdate"}
 
         response = requests.get(
             "https://api.raindrop.io/rest/v1/raindrops/0",
