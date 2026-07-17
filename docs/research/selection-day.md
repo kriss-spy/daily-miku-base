@@ -6,7 +6,7 @@ Research for [Determine how to record Selection Day](https://github.com/kriss-sp
 
 Raindrop cannot provide the exact time when the `daily-miku` tag was added. Daily Miku v2 should use an insert-only Selection Ledger in Postgres and describe its automatically captured timestamp as **first observed at**, not tag-added at.
 
-The synchronizer should repeatedly reconcile the complete set of bookmarks matching `#daily-miku`. On the first successful initialization, existing matches must be recorded as baseline entries with an unknown Selection Day. On later reconciliations, a previously unseen match receives the current UTC observation instant and the calendar date of that instant in the configured timezone. An operator may assign a known historical Selection Day manually, but the system must never infer one from Raindrop's `created` or `lastUpdate` fields.
+The synchronizer should repeatedly reconcile the complete set of bookmarks matching `#daily-miku`. A separate, one-time initialization run imports existing matches using their current `lastUpdate` date to preserve v1 dated URLs, while explicitly marking those dates as legacy approximations. On later reconciliations, a previously unseen match receives the current UTC observation instant and the calendar date of that instant in the configured timezone. An operator may replace an approximate date with a known historical Selection Day, but the system must never present a legacy `lastUpdate` date as the exact tag-added day.
 
 This design keeps Raindrop authoritative for bookmark content and current tag membership. The ledger is authoritative only for the first observation and any explicitly recorded Selection Day.
 
@@ -50,10 +50,11 @@ Each run should:
 1. Record one UTC `observed_at` instant for the run.
 2. Fetch every page matching `#daily-miku`, following the documented pagination contract rather than relying on `-lastUpdate` ordering.
 3. Insert each previously unseen Raindrop ID using an atomic conflict-safe write.
-4. On an explicit first-run initialization, mark all current matches as `baseline`, with no Selection Day.
-5. On routine runs, mark unseen matches as `observed` and derive their Selection Day from `observed_at` in the configured IANA calendar timezone.
-6. Preserve rows when tags are removed or bookmark metadata changes.
-7. Resolve current title, source, cover, tags, and other content from Raindrop rather than copying them into the ledger.
+4. On an explicit initialization run, mark current matches as `legacy` and derive their approximate date from `lastUpdate` in the configured calendar timezone.
+5. Before applying initialization, report multiple Raindrop IDs assigned to one date and duplicate IDs, normalized source URLs, or normalized cover identities anywhere in the import for operator review.
+6. On routine runs, mark unseen matches as `observed` and derive their Selection Day from `observed_at` in the configured IANA calendar timezone.
+7. Preserve rows when tags are removed or bookmark metadata changes.
+8. Resolve current title, source, cover, tags, and other content from Raindrop rather than copying them into the ledger.
 
 Full reconciliation is required for correctness. A conservative, overlapping `lastUpdate` query may reduce work, but it cannot be the only scan because it has date granularity, reflects unrelated updates, and lacks a supported corresponding sort order.
 
@@ -62,15 +63,13 @@ The operation must be idempotent because Vercel recommends reconciliation-based 
 ## Minimal Selection Ledger
 
 ```sql
-create type selection_recording_method as enum ('baseline', 'observed', 'manual');
+create type selection_recording_method as enum ('legacy', 'observed', 'manual');
 
 create table selection_ledger (
     raindrop_id bigint primary key,
     first_observed_at timestamptz not null,
-    selection_day date,
-    recording_method selection_recording_method not null,
-    check (recording_method <> 'baseline' or selection_day is null),
-    check (recording_method = 'baseline' or selection_day is not null)
+    selection_day date not null,
+    recording_method selection_recording_method not null
 );
 
 create index selection_ledger_day_idx on selection_ledger (selection_day);
@@ -82,10 +81,12 @@ Field semantics:
 | --- | --- |
 | `raindrop_id` | Stable Raindrop `_id`; identity and conflict key. |
 | `first_observed_at` | UTC instant when this service first completed an observation of the bookmark carrying `daily-miku`; never represented as the exact tag-add time. |
-| `selection_day` | Immutable calendar date in the configured timezone, or `NULL` when initialization found a pre-existing tag whose day is unknown. |
-| `recording_method` | `baseline` for an unknown pre-existing selection, `observed` for a polling-derived day, or `manual` for an operator-supplied historical day. |
+| `selection_day` | Immutable calendar date in the configured timezone. For `legacy` rows this is only the date needed to preserve v1 behavior. |
+| `recording_method` | `legacy` for an initialization date derived from current `lastUpdate`, `observed` for a polling-derived day, or `manual` for an operator-supplied historical day. |
 
-`selection_day` must not be unique. Multiple bookmarks on one day represent a Daily Slot conflict that downstream interfaces must expose. The ledger is insert-only during normal synchronization; a narrowly controlled manual correction may replace a baseline entry's unknown day and method, with an audit mechanism specified during implementation.
+`selection_day` must not be unique. Multiple bookmarks on one day represent a Daily Slot conflict that initialization must report and downstream interfaces must expose. The primary key prevents one Raindrop ID from occupying two dates in the ledger. Duplicate source URLs or image identities across different Raindrop IDs require a dry-run warning because they may represent the same work, but they cannot be rejected automatically. The ledger is insert-only during normal synchronization; a narrowly controlled manual correction may replace a legacy approximation and method, with an audit mechanism specified during implementation.
+
+The initializer cannot discover a bookmark's former v1 date after `lastUpdate` changes unless an external snapshot recorded it. Comparing the current tagged set can detect collisions and duplicate identities, not reconstruct overwritten history.
 
 A sync-run table would improve monitoring and preserve negative-observation bounds, but it is not part of the smallest ledger contract. Operational design should add one if alerting or measurable synchronization lag is required.
 
@@ -106,9 +107,9 @@ Postgres provides the uniqueness, atomic insert, date query, and future migratio
 ## Consequences For V2
 
 - Product and API language must distinguish **Selection Day** from an automatically observed day. An observed day is an approximation unless selection is performed through an application-controlled write path.
-- Baseline entries with unknown dates must not appear as a mass conflict on deployment day.
-- Empty Daily Slots remain valid; multiple non-baseline entries on one date remain visible conflicts.
-- The migration plan must define manual backfill inputs and leave unsupported historical dates unknown rather than fabricating them.
+- Initialization is a separate dry-run/apply operation; it must paginate the full tagged set and report conflicts and likely duplicates before writing legacy dates.
+- Empty Daily Slots remain valid; multiple entries on one date remain visible conflicts, including legacy entries.
+- The migration plan must preserve legacy dates without claiming they are exact and define how operators correct known historical dates.
 - Reliability requirements must choose an acceptable maximum observation delay and a Vercel plan or external trigger capable of that polling interval.
 
 [^raindrop-fields]: [Raindrop API: Raindrop fields](https://developer.raindrop.io/v1/raindrops)
