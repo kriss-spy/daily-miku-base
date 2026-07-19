@@ -30,11 +30,11 @@ The single read model for Daily Slots. Its interface is the contract's read surf
 
 ### Reconciler
 
-The only Selection Ledger write path. Provides `reconcile()` for routine full-tag-set reconciliation and `initialize()` with dry-run reporting for the one-time legacy import described in [Recording Selection Day](../research/selection-day.md). Invoked only from `email send` preconditions, the scheduled endpoint, and manual operator runs.
+The only Selection Ledger write path. Provides `reconcile()` for routine full-tag-set reconciliation, `initialize()` with dry-run reporting for the one-time legacy import described in [Recording Selection Day](../research/selection-day.md), and `correct()` for audited operator corrections. Invoked only from `email send` preconditions, the scheduled endpoint, and manual operator runs.
 
 ### Image Pipeline
 
-`resolve_image(date)` implements the mirror-first strategy from [Resilient Image Delivery](../research/image-delivery.md) and returns the contract's distinct outcomes (redirect target, no image, conflict refusal, withdrawal, upstream failure classes). Its implementation hides source adapters, validation and normalization, content-addressed naming, and the Blob store.
+`resolve_image(date)` implements the mirror-first strategy from [Resilient Image Delivery](../research/image-delivery.md) and returns the contract's distinct outcomes (redirect target, no image, conflict refusal, withdrawal, upstream failure classes). `ingest()` and `withdraw()` provide the controlled operator mutations. The module hides source adapters, validation and normalization, provenance and tombstone storage, content-addressed naming, and the Blob store.
 
 ### Email Delivery
 
@@ -54,14 +54,14 @@ Slot Catalog reads never write. A page view or JSON read is always a read of the
 The Reconciler runs on exactly three triggers:
 
 1. `daily-miku email send` preconditions, as the CLI contract requires.
-2. A scheduled trigger hitting the internal reconcile endpoint, guarded by a shared secret.
+2. A scheduled GitHub Actions trigger hitting the internal reconcile endpoint, guarded by a shared secret.
 3. Manual operator runs.
 
-The acceptable observation delay and the schedule that achieves it are reliability policy owned by the roadmap, not by this architecture.
+The roadmap sets a 15-minute best-effort observation target. GitHub Actions owns the schedule because standard runners are free for this public repository while Vercel Hobby Cron permits only daily execution. The authenticated endpoint remains scheduler-independent and duplicate invocations remain safe.
 
 ## Data Access
 
-- psycopg v3 with hand-written SQL. No ORM: the Selection Ledger and Email Delivery stores are two small tables whose DDL is already specified, and explicit SQL keeps the module interfaces small.
+- psycopg v3 with hand-written SQL. No ORM: the Selection Ledger, its audit and run records, image records, and Email Delivery store form a small explicit schema, and hand-written SQL keeps the module interfaces small.
 - Schema changes ship as numbered `.sql` migration files applied transactionally, recorded in a `schema_migrations` table. `doctor` compares that table against the application's expected schema version.
 - On Vercel, adapters open per-invocation connections against the provider's pooled endpoint (Neon by default). Local development uses a small lazy pool. Pooling strategy is hidden inside the adapters.
 
@@ -79,7 +79,7 @@ Routers are thin: parse and validate input, call a deep module, render or serial
 
 ## CLI Delivery Layer
 
-Commands mirror the contract surface (`slot today`, `slot get`, `archive list`, `doctor`, `email send`). Each command builds services through the composition root, calls the matching deep module, renders human output or the contract's JSON document, and maps results onto the contract's exit codes.
+Commands mirror the contract surface (`slot`, `archive`, `doctor`, `email`, `ledger`, and `image`). Each command builds services through the composition root, calls the matching deep module, renders human output or the contract's JSON document, and maps results onto the contract's exit codes.
 
 ## Frontend Assets And Progressive Enhancement
 
@@ -102,7 +102,8 @@ src/daily_miku/
   services.py        # build_services composition root
 public/              # static assets served by Vercel's CDN
 api/index.py         # ASGI entrypoint re-exporting the app
-vercel.json          # rewrites and cron
+vercel.json          # application rewrites
+.github/workflows/   # reconciliation and email schedules
 ```
 
 `api/` and `public/` are deployment edges, not package code.
@@ -110,7 +111,7 @@ vercel.json          # rewrites and cron
 ## Vercel Deployment
 
 - One ASGI entrypoint: `api/index.py` re-exports the FastAPI app; `vercel.json` rewrites every route to it. Vercel's Python runtime serves ASGI directly; no Mangum or Lambda adapter is used.
-- `vercel.json` also declares the cron schedule targeting the internal reconcile endpoint.
+- A lightweight GitHub Actions schedule targets the authenticated internal reconcile endpoint every 15 minutes. Vercel configuration does not own scheduled reconciliation.
 - Static assets ship in `public/` and are served by Vercel's CDN without invoking the function.
 - If a route later proves to need distinct resources, promoting one router to its own function is a `vercel.json` change, not a refactor, because routers are thin adapters.
 - Local development runs the same app (`daily-miku serve` or `uvicorn`) against local or preview dependencies.

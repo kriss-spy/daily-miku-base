@@ -21,8 +21,25 @@ The following commands are the supported v2 contract:
 | `daily-miku archive list [--cursor CURSOR] [--limit N] [--json]` | List non-empty Daily Slots newest-first. |
 | `daily-miku doctor [--json]` | Check configuration and every required dependency without changing data or sending email. |
 | `daily-miku email send [--date DATE] [--force] [--json]` | Reconcile current selections and deliver one date's selected Daily Miku. `DATE` defaults to today. |
+| `daily-miku ledger initialize [--apply] [--json]` | Dry-run or apply the one-time legacy Selection Ledger initialization. |
+| `daily-miku ledger reconcile [--json]` | Reconcile the complete current tagged set into the Selection Ledger. |
+| `daily-miku ledger correct RAINDROP_ID DATE --reason TEXT [--json]` | Apply one audited manual Selection Day correction. |
+| `daily-miku image ingest RAINDROP_ID FILE --authorization-note TEXT [--json]` | Validate, normalize, and store operator-supplied authorized image bytes. |
+| `daily-miku image withdraw RAINDROP_ID --reason TEXT [--json]` | Record a withdrawal and stop controlled image delivery. |
 
 The v1 names `fetch-today`, `fetch-date`, `test-connection`, `list`, and `send-email` are removed rather than retained as aliases. `serve` may remain a development convenience, but it is not a supported interface contract.
+
+## Operator Commands
+
+`ledger initialize` is dry-run by default. It completes a paginated scan, reports proposed legacy rows, conflicts, and duplicate identities, and writes only when `--apply` is present. Apply is transactional and idempotent. `ledger reconcile` performs the same routine full-set reconciliation used by email and the scheduled endpoint.
+
+`ledger correct` is the controlled exception to insert-only Selection Days. It requires a non-blank reason, changes the row to the `manual` recording method, and appends the former and new date and method, reason, operator identity, and timestamp to correction history. It never silently moves another candidate out of a resulting conflict.
+
+`image ingest` accepts a local raster file and an operator-supplied note describing the authorization basis. It applies the Image Pipeline's byte, type, decoding, dimension, normalization, metadata, and content-addressing policy before uploading and updating the Raindrop cover. It records provenance but does not claim that software independently verified reproduction rights.
+
+`image withdraw` requires a reason, records a durable tombstone, and prevents controlled delivery with the contracted `410` outcome. Blob garbage collection must not remove content still referenced by another item. Neither image command exposes a public mutation endpoint.
+
+Operator command argument and configuration failures use the common exit codes. A dry-run or idempotent no-op exits `0`; a rejected unsafe image is a domain-blocked operation and exits `5`; dependency failures exit `4`.
 
 ## Read Commands
 
@@ -141,6 +158,8 @@ V2 uses a clean configuration namespace and does not retain v1 environment names
 | --- | --- |
 | `DAILY_MIKU_TIMEZONE` | Optional; defaults to `Asia/Shanghai`. |
 | `DAILY_MIKU_TAG` | Optional; defaults to `daily-miku`. |
+| `DAILY_MIKU_OPERATOR` | Required for audited ledger correction and image mutation commands. |
+| `DAILY_MIKU_RECONCILE_SECRET` | Required by the internal scheduled reconciliation endpoint and its caller. |
 | `DAILY_MIKU_EMAIL_FROM` | Required for email; one validated sender address. |
 | `DAILY_MIKU_EMAIL_RECIPIENTS` | Required for email; comma-separated validated recipient addresses. |
 | `RAINDROP_TOKEN` | Required for reconciliation and Raindrop-authoritative content. |

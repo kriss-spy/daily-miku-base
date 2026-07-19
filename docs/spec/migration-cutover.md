@@ -35,16 +35,16 @@ Store the manifest as a protected migration artifact, not application data. Rain
 Initialization follows the contract in [Recording Selection Day](../research/selection-day.md):
 
 1. Run all database migrations against the target database and verify the expected schema version.
-2. Run `initialize` in dry-run mode against the complete tagged set and persist its report.
+2. Run `daily-miku ledger initialize` in its default dry-run mode against the complete tagged set and persist its report.
 3. Compare the report with the baseline manifest. Counts and Raindrop IDs must match; every derived legacy date must be explainable from the captured `lastUpdate` value in the configured timezone.
 4. Review every duplicate identity warning. A warning may be accepted, but it cannot disappear into logs.
 5. Resolve every legacy Daily Slot conflict or explicitly accept it as a visible v2 conflict. An accepted conflict changes `/image/{date}` to `409` and must be named in the cutover record.
-6. Apply initialization with atomic conflict-safe inserts and rerun the dry run. The second report must propose no new rows.
+6. Apply initialization with `daily-miku ledger initialize --apply`, using atomic conflict-safe inserts, and rerun the dry run. The second report must propose no new rows.
 7. Compare ledger rows with the approved report by Raindrop ID, Selection Day, and `legacy` recording method.
 
 Normal tagging may continue while preview verification proceeds. For final cutover, announce a brief operator freeze during which no `daily-miku` tags are added or removed. Take the final complete snapshot, repeat the dry-run comparison, apply any still-unseen legacy rows, and keep the freeze in place through the first successful v2 reconciliation after promotion.
 
-Initialization never reruns after public cutover. A later unseen bookmark is recorded by routine reconciliation as `observed`; a known historical correction uses the controlled manual-correction path rather than rewriting the import.
+Initialization never reruns after public cutover. A later unseen bookmark is recorded by routine reconciliation as `observed`; a known historical correction uses `daily-miku ledger correct` and its append-only correction history rather than rewriting the import.
 
 ## Image Readiness
 

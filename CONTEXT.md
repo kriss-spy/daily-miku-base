@@ -15,3 +15,11 @@ The publication slot for one Selection Day. A Daily Slot may contain one Daily M
 ## Email Delivery
 
 The outcome of sending one selected Daily Miku for one Daily Slot to one configured recipient. An empty or conflicting Daily Slot cannot produce an Email Delivery.
+
+## Selection Correction
+
+An audited operator change to a recorded Selection Day when reliable historical evidence supersedes a legacy or observed approximation. It preserves the former value, new value, reason, operator, and time of change.
+
+## Image Withdrawal
+
+A recorded decision that a Daily Miku's controlled image must no longer be delivered. A withdrawal is distinct from an image that is missing or temporarily unavailable.
