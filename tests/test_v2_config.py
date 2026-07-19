@@ -3,9 +3,24 @@
 import pytest
 from pydantic import ValidationError
 
-from daily_miku.config import ConfigurationError, LedgerSettings, Settings
+from daily_miku.config import (
+    ConfigurationError,
+    InitializationSettings,
+    LedgerSettings,
+    Settings,
+)
 
 pytestmark = pytest.mark.unit
+
+
+def test_initialization_settings_require_only_database_and_raindrop() -> None:
+    settings = InitializationSettings.from_environment(
+        DATABASE_URL="postgresql://example",
+        RAINDROP_TOKEN="token",
+    )
+
+    assert settings.tag == "daily-miku"
+    assert settings.database_url.get_secret_value() == "postgresql://example"
 
 
 def test_ledger_settings_require_only_correction_configuration() -> None:

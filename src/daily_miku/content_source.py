@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum
 from typing import Any, Protocol
 
@@ -21,14 +22,21 @@ class ScanStatus(StrEnum):
 
 @dataclass(frozen=True)
 class TaggedItem:
-    """Stable identity discovered in the current tagged set."""
+    """Current tagged identity and legacy-initialization evidence."""
 
     raindrop_id: int
+    last_update: datetime | None = None
+    source_url: str | None = None
+    cover_identity: str | None = None
 
     def __post_init__(self) -> None:
         """Require a valid Raindrop identity."""
         if self.raindrop_id <= 0:
             raise ValueError("raindrop_id must be positive")
+        if self.last_update is not None and (
+            self.last_update.tzinfo is None or self.last_update.utcoffset() is None
+        ):
+            raise ValueError("last_update must be timezone-aware")
 
 
 @dataclass(frozen=True)
@@ -183,7 +191,28 @@ class RaindropContentSource:
                 raw_item.get("_id"), int
             ):
                 raise ValueError("response contains an invalid item")
-            items.append(TaggedItem(raw_item["_id"]))
+            last_update = raw_item.get("lastUpdate")
+            source_url = raw_item.get("link")
+            cover_identity = raw_item.get("cover")
+            if last_update is not None and not isinstance(last_update, str):
+                raise ValueError("response contains an invalid lastUpdate")
+            if source_url is not None and not isinstance(source_url, str):
+                raise ValueError("response contains an invalid link")
+            if cover_identity is not None and not isinstance(cover_identity, str):
+                raise ValueError("response contains an invalid cover")
+            parsed_last_update = (
+                datetime.fromisoformat(last_update.replace("Z", "+00:00"))
+                if last_update is not None
+                else None
+            )
+            items.append(
+                TaggedItem(
+                    raw_item["_id"],
+                    parsed_last_update,
+                    source_url,
+                    cover_identity,
+                )
+            )
         if len(items) > PAGE_SIZE:
             raise ValueError("response exceeds the requested page size")
         return tuple(items), count

@@ -1,5 +1,6 @@
 """Postgres Selection Ledger adapter."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -64,6 +65,62 @@ class PostgresLedger:
             )
             for row in rows
         )
+
+    def recorded_raindrop_ids(self, raindrop_ids: Sequence[int]) -> frozenset[int]:
+        """Read requested identities that already exist in the ledger."""
+        if not raindrop_ids:
+            return frozenset()
+        try:
+            with self.connection_factory() as connection:
+                rows = connection.execute(
+                    "SELECT raindrop_id FROM selection_ledger "
+                    "WHERE raindrop_id = ANY(%s) ORDER BY raindrop_id ASC",
+                    (list(raindrop_ids),),
+                ).fetchall()
+        except (psycopg.Error, PoolTimeout) as exc:
+            raise LedgerDependencyError("Could not inspect Selection Ledger") from exc
+        return frozenset(int(row[0]) for row in rows)
+
+    def initialize_candidates(
+        self, rows: Sequence[tuple[SelectionDay, SlotCandidate]]
+    ) -> int:
+        """Insert the approved legacy set in one database transaction."""
+        inserted_count = 0
+        try:
+            with self.connection_factory() as connection:
+                for day, candidate in rows:
+                    row = connection.execute(
+                        "INSERT INTO selection_ledger "
+                        "(raindrop_id, selection_day, recording_method, "
+                        "first_observed_at) VALUES (%s, %s, %s, %s) "
+                        "ON CONFLICT (raindrop_id) DO NOTHING RETURNING raindrop_id",
+                        (
+                            candidate.raindrop_id,
+                            day.value,
+                            candidate.recording_method.value,
+                            candidate.first_observed_at,
+                        ),
+                    ).fetchone()
+                    if row is None:
+                        existing = connection.execute(
+                            "SELECT selection_day, recording_method "
+                            "FROM selection_ledger WHERE raindrop_id = %s FOR UPDATE",
+                            (candidate.raindrop_id,),
+                        ).fetchone()
+                        if existing is None or (
+                            existing[0] != day.value
+                            or str(existing[1]) != RecordingMethod.LEGACY.value
+                        ):
+                            raise LedgerDependencyError(
+                                f"Raindrop {candidate.raindrop_id} changed during "
+                                "initialization"
+                            )
+                    inserted_count += row is not None
+        except (psycopg.Error, PoolTimeout) as exc:
+            raise LedgerDependencyError(
+                "Could not initialize Selection Ledger"
+            ) from exc
+        return inserted_count
 
     def correct_candidate(
         self,

@@ -1,5 +1,6 @@
 """Internal Selection Ledger contracts."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -100,5 +101,21 @@ class ReconciliationLedger(Ledger, Protocol):
         ...
 
 
-class OperationalLedger(ReconciliationLedger, CorrectionLedger, Protocol):
+class InitializationLedger(Ledger, Protocol):
+    """Read and transactional write surface for one-time initialization."""
+
+    def recorded_raindrop_ids(self, raindrop_ids: Sequence[int]) -> frozenset[int]:
+        """Return the requested identities already present in the ledger."""
+        ...
+
+    def initialize_candidates(
+        self, rows: Sequence[tuple[SelectionDay, SlotCandidate]]
+    ) -> int:
+        """Atomically insert conflict-safe legacy candidate rows."""
+        ...
+
+
+class OperationalLedger(
+    ReconciliationLedger, CorrectionLedger, InitializationLedger, Protocol
+):
     """Complete ledger surface required by the application composition root."""

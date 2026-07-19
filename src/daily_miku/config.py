@@ -18,8 +18,8 @@ class ConfigurationError(RuntimeError):
     """Safe configuration failure that never includes submitted values."""
 
 
-class LedgerSettings(BaseSettings):
-    """Validate configuration required by ledger-only commands."""
+class DatabaseSettings(BaseSettings):
+    """Validate shared Selection Ledger connection configuration."""
 
     model_config = SettingsConfigDict(
         env_file=".env", extra="ignore", populate_by_name=True
@@ -27,7 +27,6 @@ class LedgerSettings(BaseSettings):
 
     timezone_name: str = Field("Asia/Shanghai", alias="DAILY_MIKU_TIMEZONE")
     serverless: bool = Field(False, alias="VERCEL")
-    operator: str = Field(alias="DAILY_MIKU_OPERATOR")
     database_url: SecretStr = Field(alias="DATABASE_URL")
 
     @field_validator("timezone_name")
@@ -39,14 +38,6 @@ class LedgerSettings(BaseSettings):
         except ZoneInfoNotFoundError as exc:
             raise ValueError("unknown IANA timezone") from exc
         return value
-
-    @field_validator("operator")
-    @classmethod
-    def validate_operator(cls, value: str) -> str:
-        """Reject an empty audit identity."""
-        if not value.strip():
-            raise ValueError("must not be empty")
-        return value.strip()
 
     @field_validator("database_url")
     @classmethod
@@ -70,6 +61,43 @@ class LedgerSettings(BaseSettings):
             raise ConfigurationError(
                 f"Invalid configuration fields: {', '.join(sorted(fields))}"
             ) from None
+
+
+class LedgerSettings(DatabaseSettings):
+    """Validate configuration required by correction commands."""
+
+    operator: str = Field(alias="DAILY_MIKU_OPERATOR")
+
+    @field_validator("operator")
+    @classmethod
+    def validate_operator(cls, value: str) -> str:
+        """Reject an empty audit identity."""
+        if not value.strip():
+            raise ValueError("must not be empty")
+        return value.strip()
+
+
+class InitializationSettings(DatabaseSettings):
+    """Validate only dependencies used by legacy initialization."""
+
+    tag: str = Field("daily-miku", alias="DAILY_MIKU_TAG")
+    raindrop_token: SecretStr = Field(alias="RAINDROP_TOKEN")
+
+    @field_validator("tag")
+    @classmethod
+    def validate_tag(cls, value: str) -> str:
+        """Reject an empty Raindrop tag."""
+        if not value.strip():
+            raise ValueError("must not be empty")
+        return value.strip()
+
+    @field_validator("raindrop_token")
+    @classmethod
+    def validate_raindrop_token(cls, value: SecretStr) -> SecretStr:
+        """Reject an empty Raindrop credential."""
+        if not value.get_secret_value().strip():
+            raise ValueError("must not be empty")
+        return value
 
 
 class Settings(LedgerSettings):

@@ -43,6 +43,29 @@ def main() -> None:
             sys.exit(2)
         ledger_command = sys.argv[2]
         options = sys.argv[3:]
+        if ledger_command == "initialize":
+            valid_options = {"--apply", "--json"}
+            valid = (
+                all(option in valid_options for option in options)
+                and options.count("--apply") <= 1
+                and options.count("--json") <= 1
+            )
+            if valid:
+                sys.exit(
+                    cli.run_ledger_initialize(
+                        apply="--apply" in options,
+                        json_output="--json" in options,
+                    )
+                )
+            usage = "Usage: daily-miku ledger initialize [--apply] [--json]"
+            if "--json" in options:
+                print(
+                    '{"status":"failed","error":{"code":"invocation_invalid",'
+                    f'"message":"{usage}","details":{{}}}}'
+                )
+            else:
+                print(usage, file=sys.stderr)
+            sys.exit(2)
         if ledger_command == "reconcile":
             if (
                 any(option != "--json" for option in options)

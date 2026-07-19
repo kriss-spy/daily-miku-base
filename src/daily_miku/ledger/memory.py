@@ -1,5 +1,6 @@
 """In-memory Selection Ledger adapter."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from threading import Lock
@@ -9,6 +10,7 @@ from .port import (
     CandidateNotFound,
     CorrectionRecord,
     CorrectionUnchanged,
+    LedgerDependencyError,
     RunStatus,
 )
 
@@ -57,6 +59,33 @@ class InMemoryLedger:
             if recorded_day == day
         )
         return tuple(sorted(candidates, key=lambda item: item.raindrop_id))
+
+    def recorded_raindrop_ids(self, raindrop_ids: Sequence[int]) -> frozenset[int]:
+        """Return requested identities already held by this adapter."""
+        requested = frozenset(raindrop_ids)
+        return frozenset(requested.intersection(self._records))
+
+    def initialize_candidates(
+        self, rows: Sequence[tuple[SelectionDay, SlotCandidate]]
+    ) -> int:
+        """Atomically insert all unseen legacy candidates."""
+        with self._lock:
+            for day, candidate in rows:
+                existing = self._records.get(candidate.raindrop_id)
+                if existing is not None and (
+                    existing[0] != day
+                    or existing[1].recording_method is not RecordingMethod.LEGACY
+                ):
+                    raise LedgerDependencyError(
+                        f"Raindrop {candidate.raindrop_id} changed during initialization"
+                    )
+            inserted_count = 0
+            for day, candidate in rows:
+                if candidate.raindrop_id not in self._records:
+                    self._records[candidate.raindrop_id] = (day, candidate)
+                    inserted_count += 1
+            self.write_count += inserted_count
+            return inserted_count
 
     def correct_candidate(
         self,

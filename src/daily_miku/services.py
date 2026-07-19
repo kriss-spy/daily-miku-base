@@ -7,6 +7,7 @@ from .config import Settings
 from .content_source import ContentSource, RaindropContentSource
 from .correction import SelectionCorrector
 from .domain import Calendar, Clock, SystemClock
+from .initialize import LedgerInitializer
 from .ledger.port import OperationalLedger
 from .ledger.postgres import PostgresLedger
 from .reconcile import Reconciler
@@ -24,6 +25,7 @@ class Services:
     catalog: SlotCatalog
     reconciler: Reconciler
     corrector: SelectionCorrector
+    initializer: LedgerInitializer
 
 
 def build_services(
@@ -53,5 +55,8 @@ def build_services(
         ),
         corrector=SelectionCorrector(
             resolved_ledger, calendar, resolved_clock, settings.operator
+        ),
+        initializer=LedgerInitializer(
+            resolved_ledger, resolved_content_source, calendar, resolved_clock
         ),
     )

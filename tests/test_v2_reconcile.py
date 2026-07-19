@@ -157,6 +157,34 @@ def test_raindrop_adapter_reads_every_page_without_last_update_sort() -> None:
     assert all("sort" not in request["params"] for request in requests_seen)  # type: ignore[operator]
 
 
+def test_raindrop_adapter_captures_legacy_initialization_fields() -> None:
+    def get(url: str, **kwargs: object) -> FakeResponse:
+        return FakeResponse(
+            {
+                "count": 1,
+                "items": [
+                    {
+                        "_id": 7,
+                        "lastUpdate": "2026-07-18T16:30:00.000Z",
+                        "link": "https://example.com/work",
+                        "cover": "https://cdn.example/work.jpg",
+                    }
+                ],
+            }
+        )
+
+    scan = RaindropContentSource("token", "tag", get=get).scan_tagged()
+
+    assert scan.items == (
+        TaggedItem(
+            7,
+            datetime(2026, 7, 18, 16, 30, tzinfo=timezone.utc),
+            "https://example.com/work",
+            "https://cdn.example/work.jpg",
+        ),
+    )
+
+
 def test_raindrop_adapter_checks_the_page_after_an_exact_multiple() -> None:
     pages: list[int] = []
 

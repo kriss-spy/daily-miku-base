@@ -3,13 +3,20 @@
 import json
 import re
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from . import email as email_module
-from .config import ConfigurationError, LedgerSettings, Settings
+from .config import (
+    ConfigurationError,
+    InitializationSettings,
+    LedgerSettings,
+    Settings,
+)
+from .content_source import RaindropContentSource
 from .correction import SelectionCorrector
 from .domain import Calendar, FutureSelectionDay, SystemClock
+from .initialize import InitializationDependencyError, LedgerInitializer
 from .ledger.postgres import PostgresLedger
 from .ledger.port import (
     CandidateNotFound,
@@ -42,6 +49,86 @@ def _correction_document(record: CorrectionRecord) -> dict[str, object]:
         "operator": record.operator,
         "corrected_at": record.corrected_at.isoformat().replace("+00:00", "Z"),
     }
+
+
+def initialize_ledger(
+    initializer: LedgerInitializer,
+    *,
+    apply: bool = False,
+    json_output: bool = False,
+) -> int:
+    """Run legacy initialization and render its complete review report."""
+    try:
+        report = initializer.initialize(apply=apply)
+    except InitializationDependencyError:
+        message = "Legacy initialization could not access a complete safe snapshot."
+        if json_output:
+            print(
+                json.dumps(_error_document("initialization_dependency_failed", message))
+            )
+        else:
+            print(message, file=sys.stderr)
+        return 4
+    except Exception:
+        message = "An unexpected legacy initialization failure occurred."
+        if json_output:
+            print(json.dumps(_error_document("internal_error", message)))
+        else:
+            print(message, file=sys.stderr)
+        return 1
+
+    if json_output:
+        print(json.dumps(report.as_dict()))
+        return 0
+
+    action = "Applied" if apply else "Dry run"
+    print(
+        f"{action}: discovered {report.discovered_count}, "
+        f"unique {report.unique_count}, existing {report.existing_count}, "
+        f"proposed {len(report.proposed_rows)}, inserted {report.inserted_count}."
+    )
+    for row in report.proposed_rows:
+        print(
+            f"  Raindrop {row.raindrop_id}: {row.selection_day.value} "
+            f"(legacy, lastUpdate {_utc_timestamp(row.last_update)})"
+        )
+    for conflict in report.conflicts:
+        identities = ", ".join(str(value) for value in conflict.raindrop_ids)
+        print(f"  Conflict {conflict.selection_day.value}: {identities}")
+    for warning in report.duplicate_identities:
+        identities = ", ".join(str(value) for value in warning.raindrop_ids)
+        print(f"  Duplicate {warning.kind} {warning.identity}: {identities}")
+    return 0
+
+
+def _utc_timestamp(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def run_ledger_initialize(*, apply: bool = False, json_output: bool = False) -> int:
+    """Build configured services and run legacy initialization."""
+    try:
+        settings = InitializationSettings.from_environment()
+    except ConfigurationError as exc:
+        if json_output:
+            print(json.dumps(_error_document("configuration_invalid", str(exc))))
+        else:
+            print(str(exc), file=sys.stderr)
+        return 3
+    ledger = PostgresLedger.from_url(
+        settings.database_url.get_secret_value(), local_pool=not settings.serverless
+    )
+    initializer = LedgerInitializer(
+        ledger,
+        RaindropContentSource(settings.raindrop_token.get_secret_value(), settings.tag),
+        Calendar.named(settings.timezone_name),
+        SystemClock(),
+    )
+    return initialize_ledger(
+        initializer,
+        apply=apply,
+        json_output=json_output,
+    )
 
 
 def correct_selection_day(

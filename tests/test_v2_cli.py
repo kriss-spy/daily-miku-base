@@ -6,7 +6,7 @@ from datetime import date, datetime, timezone
 import pytest
 
 from daily_miku import cli, main
-from daily_miku.cli import correct_selection_day, reconcile_ledger
+from daily_miku.cli import correct_selection_day, initialize_ledger, reconcile_ledger
 from daily_miku.content_source import InMemoryContentSource, ScanStatus, TaggedItem
 from daily_miku.correction import SelectionCorrector
 from daily_miku.domain import (
@@ -17,6 +17,7 @@ from daily_miku.domain import (
     SlotCandidate,
 )
 from daily_miku.ledger.memory import InMemoryLedger
+from daily_miku.initialize import LedgerInitializer
 from daily_miku.reconcile import Reconciler
 
 pytestmark = pytest.mark.unit
@@ -30,6 +31,71 @@ def reconciler(status: ScanStatus = ScanStatus.COMPLETE) -> Reconciler:
         Calendar.named("Asia/Shanghai"),
         FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
     )
+
+
+def initializer() -> LedgerInitializer:
+    """Build an isolated legacy initialization service."""
+    return LedgerInitializer(
+        InMemoryLedger(),
+        InMemoryContentSource(
+            (
+                TaggedItem(
+                    4,
+                    datetime(2026, 7, 18, 12, tzinfo=timezone.utc),
+                    "https://example.com/work",
+                    "https://cdn.example/work.jpg",
+                ),
+            )
+        ),
+        Calendar.named("Asia/Shanghai"),
+        FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
+    )
+
+
+def test_ledger_initialize_json_reports_dry_run(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    exit_code = initialize_ledger(initializer(), json_output=True)
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "status": "dry_run",
+        "discovered": 1,
+        "unique": 1,
+        "existing": 0,
+        "proposed": [
+            {
+                "raindrop_id": 4,
+                "selection_day": "2026-07-18",
+                "last_update": "2026-07-18T12:00:00Z",
+                "recording_method": "legacy",
+            }
+        ],
+        "inserted": 0,
+        "conflicts": [],
+        "duplicate_identities": [],
+    }
+
+
+def test_main_dispatches_ledger_initialize_apply_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[bool, bool]] = []
+    monkeypatch.setattr(
+        cli,
+        "run_ledger_initialize",
+        lambda *, apply=False, json_output=False: calls.append((apply, json_output))
+        or 0,
+    )
+    monkeypatch.setattr(
+        "sys.argv", ["daily-miku", "ledger", "initialize", "--apply", "--json"]
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        main.main()
+
+    assert exit_info.value.code == 0
+    assert calls == [(True, True)]
 
 
 def test_ledger_reconcile_json_reports_complete_run(
