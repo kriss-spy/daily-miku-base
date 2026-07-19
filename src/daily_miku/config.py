@@ -27,6 +27,7 @@ class Settings(BaseSettings):
 
     timezone_name: str = Field("Asia/Shanghai", alias="DAILY_MIKU_TIMEZONE")
     tag: str = Field("daily-miku", alias="DAILY_MIKU_TAG")
+    serverless: bool = Field(False, alias="VERCEL")
     operator: str = Field(alias="DAILY_MIKU_OPERATOR")
     reconcile_secret: SecretStr = Field(alias="DAILY_MIKU_RECONCILE_SECRET")
     email_from: str = Field(alias="DAILY_MIKU_EMAIL_FROM")

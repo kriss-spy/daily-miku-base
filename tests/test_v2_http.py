@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 
 from daily_miku.config import Settings
 from daily_miku.http import create_app
+from daily_miku.ledger.memory import InMemoryLedger
+from daily_miku.ledger.postgres import PostgresLedger
 from daily_miku.logging_config import JSONFormatter
 from daily_miku.services import build_services
 
@@ -15,15 +17,21 @@ pytestmark = pytest.mark.unit
 
 def test_composition_root_builds_an_in_memory_http_graph() -> None:
     settings = Settings.in_memory()
-    services = build_services(settings)
+    services = build_services(settings, ledger=InMemoryLedger())
     app = create_app(settings, services)
 
     assert app.state.services is services
     assert app.state.services.calendar.timezone.key == "Asia/Shanghai"
 
 
-def test_app_uses_settings_from_an_injected_service_graph() -> None:
+def test_composition_root_uses_durable_ledger_by_default() -> None:
     services = build_services(Settings.in_memory())
+
+    assert isinstance(services.ledger, PostgresLedger)
+
+
+def test_app_uses_settings_from_an_injected_service_graph() -> None:
+    services = build_services(Settings.in_memory(), ledger=InMemoryLedger())
 
     app = create_app(services=services)
 

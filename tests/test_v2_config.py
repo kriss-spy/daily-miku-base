@@ -17,6 +17,7 @@ def test_settings_apply_defaults_and_parse_recipients() -> None:
 
     assert settings.timezone_name == "Asia/Shanghai"
     assert settings.tag == "daily-miku"
+    assert settings.serverless is False
     assert settings.smtp_port == 587
     assert settings.email_recipients == (
         "first@example.com",
