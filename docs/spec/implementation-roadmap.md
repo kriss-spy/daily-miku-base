@@ -46,7 +46,7 @@ Build the artwork-first daily experience and every operation needed to select, d
 
 - Complete core Slot Catalog selectors and bounded calendar ranges.
 - Implement the Image Pipeline, controlled Blob adapter, validation and normalization, image provenance, withdrawal tombstones, and dated redirect outcomes.
-- Add documented `image ingest` and `image withdraw` operator commands. Ingestion accepts local authorized raster bytes, requires an authorization note, validates and normalizes once, stores a content-addressed object, and updates the Raindrop cover. Withdrawal requires a reason and makes controlled delivery return `410`.
+- Implement the documented `image ingest` and `image withdraw` operator commands according to [the CLI and email contract](cli-email-contract.md).
 - Implement `/`, `/today`, and `/{date}` with the responsive Editorial Date Rail and complete selected, empty, and conflict treatments.
 - Implement the dated Slot, today, latest, random, and range JSON contracts and the retained `/image/{date}` route.
 - Implement `slot today`, `slot get`, and `doctor` CLI contracts.
