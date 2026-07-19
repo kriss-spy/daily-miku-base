@@ -4,11 +4,11 @@ import json
 import logging
 import sys
 import uuid
+from contextvars import ContextVar, Token
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any
 
-# Request context variables
-request_id_context: str = ""
+request_id_context: ContextVar[str] = ContextVar("request_id", default="")
 
 
 class JSONFormatter(logging.Formatter):
@@ -16,7 +16,7 @@ class JSONFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         """Format log record as JSON."""
-        log_data: Dict[str, Any] = {
+        log_data: dict[str, Any] = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "level": record.levelname,
             "logger": record.name,
@@ -24,8 +24,9 @@ class JSONFormatter(logging.Formatter):
         }
 
         # Add request ID if available
-        if request_id_context:
-            log_data["request_id"] = request_id_context
+        request_id = getattr(record, "request_id", None) or get_request_id()
+        if request_id:
+            log_data["request_id"] = request_id
 
         # Add exception info if present
         if record.exc_info:
@@ -51,6 +52,7 @@ def setup_logging(log_level: str = "INFO") -> logging.Logger:
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(JSONFormatter())
     logger.addHandler(console_handler)
+    logger.propagate = False
 
     return logger
 
@@ -60,15 +62,19 @@ def generate_request_id() -> str:
     return str(uuid.uuid4())
 
 
-def set_request_id(request_id: str) -> None:
+def set_request_id(request_id: str) -> Token[str]:
     """Set the request ID for the current context."""
-    global request_id_context
-    request_id_context = request_id
+    return request_id_context.set(request_id)
+
+
+def reset_request_id(token: Token[str]) -> None:
+    """Restore the request ID context that preceded a request."""
+    request_id_context.reset(token)
 
 
 def get_request_id() -> str:
     """Get the current request ID."""
-    return request_id_context
+    return request_id_context.get()
 
 
 def log_with_context(
