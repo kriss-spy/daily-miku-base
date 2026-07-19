@@ -24,6 +24,12 @@ class Ledger(Protocol):
         """Return candidates in deterministic identity order."""
         ...
 
+    def candidates_between(
+        self, first: SelectionDay, last: SelectionDay
+    ) -> tuple[tuple[SelectionDay, SlotCandidate], ...]:
+        """Return candidates in Selection Day and identity order, inclusively."""
+        ...
+
 
 class CandidateNotFound(ValueError):
     """The requested Raindrop identity is not recorded in the ledger."""

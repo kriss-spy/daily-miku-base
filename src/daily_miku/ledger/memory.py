@@ -60,6 +60,18 @@ class InMemoryLedger:
         )
         return tuple(sorted(candidates, key=lambda item: item.raindrop_id))
 
+    def candidates_between(
+        self, first: SelectionDay, last: SelectionDay
+    ) -> tuple[tuple[SelectionDay, SlotCandidate], ...]:
+        """Return the inclusive date query in stable calendar order."""
+        self.read_count += 1
+        rows = (
+            (day, candidate)
+            for day, candidate in self._records.values()
+            if first <= day <= last
+        )
+        return tuple(sorted(rows, key=lambda row: (row[0], row[1].raindrop_id)))
+
     def recorded_raindrop_ids(self, raindrop_ids: Sequence[int]) -> frozenset[int]:
         """Return requested identities already held by this adapter."""
         requested = frozenset(raindrop_ids)

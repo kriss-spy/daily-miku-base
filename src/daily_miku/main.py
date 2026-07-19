@@ -10,6 +10,7 @@ def main() -> None:
     if len(sys.argv) < 2:
         print("Usage: daily-miku <command> [args]")
         print("\nCommands:")
+        print("  slot today|get DATE  Read a Daily Slot")
         print("  fetch-today          Fetch today's daily miku")
         print("  fetch-date <date>    Fetch daily miku for specific date (YYYY-MM-DD)")
         print("  test-connection      Test Raindrop.io API connection")
@@ -20,7 +21,26 @@ def main() -> None:
 
     command = sys.argv[1]
 
-    if command == "fetch-today":
+    if command == "slot":
+        options = sys.argv[2:]
+        json_output = "--json" in options
+        values = [option for option in options if option != "--json"]
+        valid = options.count("--json") <= 1 and (
+            values == ["today"] or (len(values) == 2 and values[0] == "get")
+        )
+        if not valid:
+            usage = "Usage: daily-miku slot today|get DATE [--json]"
+            if json_output:
+                print(
+                    '{"status":"failed","error":{"code":"invocation_invalid",'
+                    f'"message":"{usage}","details":{{}}}}'
+                )
+            else:
+                print(usage, file=sys.stderr)
+            sys.exit(2)
+        date_value = values[1] if values[0] == "get" else None
+        sys.exit(cli.run_slot_read(date_value, json_output=json_output))
+    elif command == "fetch-today":
         cli.fetch_today()
     elif command == "fetch-date":
         if len(sys.argv) < 3:

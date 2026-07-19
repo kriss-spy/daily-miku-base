@@ -11,6 +11,8 @@ import psycopg
 import requests
 
 from daily_miku.content_source import (
+    ContentDependencyError,
+    ContentFailure,
     InMemoryContentSource,
     RaindropContentSource,
     ScanStatus,
@@ -183,6 +185,66 @@ def test_raindrop_adapter_captures_legacy_initialization_fields() -> None:
             "https://cdn.example/work.jpg",
         ),
     )
+
+
+def test_raindrop_adapter_reads_current_authoritative_slot_metadata() -> None:
+    urls: list[str] = []
+
+    def get(url: str, **kwargs: object) -> FakeResponse:
+        urls.append(url)
+        return FakeResponse(
+            {
+                "item": {
+                    "_id": 7,
+                    "title": "Current title",
+                    "excerpt": "Current description",
+                    "link": "https://art.example/work",
+                    "domain": "art.example",
+                    "tags": ["daily-miku", "favorite"],
+                }
+            }
+        )
+
+    items = RaindropContentSource("token", "tag", get=get).get_items((7,))
+
+    assert urls == ["https://api.raindrop.io/rest/v1/raindrop/7"]
+    assert items[0].title == "Current title"
+    assert items[0].excerpt == "Current description"
+    assert items[0].domain == "art.example"
+    assert items[0].tags == ("daily-miku", "favorite")
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected"),
+    [
+        (requests.Timeout("slow"), ContentFailure.TIMEOUT),
+        (requests.ConnectionError("offline"), ContentFailure.UNAVAILABLE),
+    ],
+)
+def test_raindrop_content_lookup_classifies_transport_failures(
+    failure: requests.RequestException, expected: ContentFailure
+) -> None:
+    def get(url: str, **kwargs: object) -> FakeResponse:
+        raise failure
+
+    source = RaindropContentSource("token", "tag", get=get)
+
+    with pytest.raises(ContentDependencyError) as error:
+        source.get_items((7,))
+
+    assert error.value.kind is expected
+
+
+def test_raindrop_content_lookup_rejects_incomplete_metadata() -> None:
+    def get(url: str, **kwargs: object) -> FakeResponse:
+        return FakeResponse({"item": {"_id": 7, "title": "Current title"}})
+
+    source = RaindropContentSource("token", "tag", get=get)
+
+    with pytest.raises(ContentDependencyError) as error:
+        source.get_items((7,))
+
+    assert error.value.kind is ContentFailure.UPSTREAM
 
 
 def test_raindrop_adapter_checks_the_page_after_an_exact_multiple() -> None:

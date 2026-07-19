@@ -50,18 +50,44 @@ class PostgresLedger:
 
     def candidates_for(self, day: SelectionDay) -> tuple[SlotCandidate, ...]:
         """Read one complete Slot in deterministic identity order."""
-        with self.connection_factory() as connection:
-            rows = connection.execute(
-                "SELECT raindrop_id, recording_method, first_observed_at "
-                "FROM selection_ledger WHERE selection_day = %s "
-                "ORDER BY raindrop_id ASC",
-                (day.value,),
-            ).fetchall()
+        try:
+            with self.connection_factory() as connection:
+                rows = connection.execute(
+                    "SELECT raindrop_id, recording_method, first_observed_at "
+                    "FROM selection_ledger WHERE selection_day = %s "
+                    "ORDER BY raindrop_id ASC",
+                    (day.value,),
+                ).fetchall()
+        except (psycopg.Error, PoolTimeout) as exc:
+            raise LedgerDependencyError("Could not read Selection Ledger") from exc
         return tuple(
             SlotCandidate(
                 raindrop_id=int(row[0]),
                 recording_method=RecordingMethod(str(row[1])),
                 first_observed_at=row[2],
+            )
+            for row in rows
+        )
+
+    def candidates_between(
+        self, first: SelectionDay, last: SelectionDay
+    ) -> tuple[tuple[SelectionDay, SlotCandidate], ...]:
+        """Read an inclusive date interval in stable calendar order."""
+        try:
+            with self.connection_factory() as connection:
+                rows = connection.execute(
+                    "SELECT selection_day, raindrop_id, recording_method, "
+                    "first_observed_at FROM selection_ledger "
+                    "WHERE selection_day BETWEEN %s AND %s "
+                    "ORDER BY selection_day ASC, raindrop_id ASC",
+                    (first.value, last.value),
+                ).fetchall()
+        except (psycopg.Error, PoolTimeout) as exc:
+            raise LedgerDependencyError("Could not read Selection Ledger") from exc
+        return tuple(
+            (
+                SelectionDay(row[0]),
+                SlotCandidate(int(row[1]), RecordingMethod(str(row[2])), row[3]),
             )
             for row in rows
         )

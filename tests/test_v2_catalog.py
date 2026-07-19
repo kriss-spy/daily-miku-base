@@ -6,7 +6,8 @@ from types import TracebackType
 
 import pytest
 
-from daily_miku.catalog import SlotCatalog
+from daily_miku.catalog import InvalidSlotRange, SlotCatalog, SlotNotFound
+from daily_miku.content_source import InMemoryContentSource, TaggedItem
 from daily_miku.domain import (
     Calendar,
     FixedClock,
@@ -85,6 +86,19 @@ class FakeConnection:
                 if recorded_day == day
             ]
             return FakeResult(rows)
+        if query.startswith("SELECT selection_day"):
+            assert "ORDER BY selection_day ASC, raindrop_id ASC" in query
+            first, last = params
+            assert isinstance(first, date)
+            assert isinstance(last, date)
+            rows = [
+                (recorded_day, raindrop_id, method, observed_at)
+                for raindrop_id, (recorded_day, method, observed_at) in sorted(
+                    self.records.items(), key=lambda row: (row[1][0], row[0])
+                )
+                if first <= recorded_day <= last
+            ]
+            return FakeResult(rows)
         raise AssertionError(f"Unexpected SQL: {query}")
 
 
@@ -110,6 +124,17 @@ class TestLedgerAdapters:
         assert ledger.candidates_for(original_day) == (candidate(20),)
         assert ledger.candidates_for(later_day) == ()
 
+    def test_queries_an_inclusive_date_interval(self, ledger: Ledger) -> None:
+        first = SelectionDay(date(2026, 7, 17))
+        last = SelectionDay(date(2026, 7, 19))
+        ledger.record_candidate(last, candidate(9))
+        ledger.record_candidate(first, candidate(3))
+
+        assert ledger.candidates_between(first, last) == (
+            (first, candidate(3)),
+            (last, candidate(9)),
+        )
+
 
 class TestSlotCatalog:
     """Read-only Daily Slot resolution behavior."""
@@ -120,6 +145,7 @@ class TestSlotCatalog:
             ledger,
             Calendar.named("Asia/Shanghai"),
             FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
+            InMemoryContentSource((TaggedItem(2), TaggedItem(3), TaggedItem(9))),
         )
         selected_day = SelectionDay(date(2026, 7, 18))
         conflict_day = SelectionDay(date(2026, 7, 19))
@@ -143,9 +169,69 @@ class TestSlotCatalog:
             ledger,
             Calendar.named("Asia/Shanghai"),
             FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
+            InMemoryContentSource(),
         )
 
         with pytest.raises(FutureSelectionDay):
             catalog.get_slot(date(2026, 7, 20))
 
         assert ledger.read_count == 0
+
+    def test_selectors_ranges_and_current_content_share_one_model(self) -> None:
+        now = datetime(2026, 7, 19, tzinfo=timezone.utc)
+        ledger = InMemoryLedger()
+        source = InMemoryContentSource(
+            (
+                TaggedItem(
+                    3,
+                    source_url="https://example.com/three",
+                    title="Current title",
+                    excerpt="Current excerpt",
+                    domain="example.com",
+                    tags=("daily-miku", "blue"),
+                ),
+                TaggedItem(8, source_url="https://example.com/eight", title="Eight"),
+                TaggedItem(9, source_url="https://example.com/nine", title="Nine"),
+            )
+        )
+        selected_day = SelectionDay(date(2026, 7, 17))
+        conflict_day = SelectionDay(date(2026, 7, 19))
+        ledger.record_candidate(selected_day, candidate(3))
+        ledger.record_candidate(conflict_day, candidate(8))
+        ledger.record_candidate(conflict_day, candidate(9))
+        catalog = SlotCatalog(
+            ledger,
+            Calendar.named("Asia/Shanghai"),
+            FixedClock(now),
+            source,
+            choose=lambda days: days[0],
+        )
+
+        slots = catalog.range(date(2026, 7, 17), date(2026, 7, 19))
+
+        assert [slot.state for slot in slots] == [
+            SlotState.SELECTED,
+            SlotState.EMPTY,
+            SlotState.CONFLICT,
+        ]
+        assert catalog.latest().state is SlotState.CONFLICT
+        assert catalog.random().day == selected_day
+        assert slots[0].items[0].title == "Current title"
+        assert slots[0].items[0].recording_method is RecordingMethod.OBSERVED
+
+    def test_selector_absence_and_range_bounds_are_explicit(self) -> None:
+        catalog = SlotCatalog(
+            InMemoryLedger(),
+            Calendar.named("Asia/Shanghai"),
+            FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
+            InMemoryContentSource(),
+        )
+
+        with pytest.raises(SlotNotFound):
+            catalog.latest()
+        with pytest.raises(SlotNotFound):
+            catalog.random()
+        with pytest.raises(InvalidSlotRange):
+            catalog.range(date(2026, 7, 19), date(2026, 7, 18))
+        with pytest.raises(InvalidSlotRange):
+            catalog.range(date(2025, 7, 18), date(2026, 7, 19))

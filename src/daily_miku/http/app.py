@@ -1,22 +1,28 @@
 """FastAPI application factory for Daily Miku v2."""
 
 import logging
+import re
 import secrets
 from collections.abc import Awaitable, Callable
+from datetime import date
+from hashlib import sha256
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from ..catalog import CatalogSlot, InvalidSlotRange, SlotNotFound, slot_document
 from ..config import Settings
+from ..content_source import ContentDependencyError, ContentFailure
+from ..domain import FutureSelectionDay
 from ..logging_config import (
     generate_request_id,
     reset_request_id,
     set_request_id,
     setup_logging,
 )
-from ..ledger.port import RunStatus
+from ..ledger.port import LedgerDependencyError, RunStatus
 from ..reconcile import ReconciliationDependencyError
 from ..services import Services, build_services
 
@@ -86,6 +92,159 @@ def create_app(
                 },
             },
             headers=response_headers,
+        )
+
+    def parse_date(value: str, field_name: str = "date") -> date:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+            raise SlotRequestError(
+                400, "date_malformed", f"{field_name} must be YYYY-MM-DD."
+            )
+        try:
+            return date.fromisoformat(value)
+        except ValueError as exc:
+            raise SlotRequestError(
+                400, "date_malformed", f"{field_name} must be YYYY-MM-DD."
+            ) from exc
+
+    def json_response(
+        content: object, cache_control: str, *, validator: bool = True
+    ) -> JSONResponse:
+        response = JSONResponse(content, headers={"Cache-Control": cache_control})
+        if validator:
+            response.headers["ETag"] = f'"{sha256(response.body).hexdigest()}"'
+        return response
+
+    def content_error_response(
+        request: Request, exc: ContentDependencyError
+    ) -> JSONResponse:
+        status_code, code = {
+            ContentFailure.UPSTREAM: (502, "content_upstream_failed"),
+            ContentFailure.UNAVAILABLE: (503, "content_unavailable"),
+            ContentFailure.TIMEOUT: (504, "content_timeout"),
+        }[exc.kind]
+        return error_response(
+            request,
+            status_code,
+            code,
+            message=str(exc),
+            headers={"Cache-Control": "no-store"},
+        )
+
+    def slot_response(slot: CatalogSlot, cache_control: str) -> JSONResponse:
+        document = slot_document(
+            slot,
+            resolved_services.calendar.today(resolved_services.clock),
+        )
+        return json_response(
+            document, cache_control, validator=cache_control != "no-store"
+        )
+
+    def read_slot(
+        request: Request, operation: Callable[[], CatalogSlot], cache: str
+    ) -> JSONResponse:
+        try:
+            return slot_response(operation(), cache)
+        except FutureSelectionDay as exc:
+            return error_response(
+                request, 422, "future_selection_day", message=str(exc)
+            )
+        except SlotNotFound as exc:
+            return error_response(
+                request,
+                404,
+                "slot_not_found",
+                message=str(exc),
+                headers={"Cache-Control": "public, max-age=15"},
+            )
+        except LedgerDependencyError:
+            return error_response(
+                request,
+                503,
+                "ledger_unavailable",
+                message="The Selection Ledger is temporarily unavailable.",
+                headers={"Cache-Control": "no-store"},
+            )
+        except ContentDependencyError as exc:
+            return content_error_response(request, exc)
+
+    @app.get("/api/slots/today")
+    def get_today(request: Request) -> JSONResponse:
+        return read_slot(
+            request,
+            resolved_services.catalog.today,
+            "public, max-age=15, s-maxage=15",
+        )
+
+    @app.get("/api/slots/latest")
+    def get_latest(request: Request) -> JSONResponse:
+        return read_slot(
+            request,
+            resolved_services.catalog.latest,
+            "public, max-age=15, s-maxage=30",
+        )
+
+    @app.get("/api/slots/random")
+    def get_random(request: Request) -> JSONResponse:
+        return read_slot(request, resolved_services.catalog.random, "no-store")
+
+    @app.get("/api/slots")
+    def get_range(request: Request) -> JSONResponse:
+        first_value = request.query_params.get("from")
+        last_value = request.query_params.get("to")
+        if first_value is None or last_value is None:
+            return error_response(
+                request,
+                400,
+                "range_invalid",
+                message="Both from and to are required.",
+            )
+        try:
+            first = parse_date(first_value, "from")
+            last = parse_date(last_value, "to")
+            slots = resolved_services.catalog.range(first, last)
+        except SlotRequestError as exc:
+            return error_response(
+                request, exc.status_code, exc.code, message=exc.message
+            )
+        except InvalidSlotRange as exc:
+            return error_response(request, 400, "range_invalid", message=str(exc))
+        except FutureSelectionDay as exc:
+            return error_response(
+                request, 422, "future_selection_day", message=str(exc)
+            )
+        except LedgerDependencyError:
+            return error_response(
+                request,
+                503,
+                "ledger_unavailable",
+                message="The Selection Ledger is temporarily unavailable.",
+                headers={"Cache-Control": "no-store"},
+            )
+        except ContentDependencyError as exc:
+            return content_error_response(request, exc)
+        today = resolved_services.calendar.today(resolved_services.clock)
+        return json_response(
+            {
+                "items": [slot_document(slot, today) for slot in slots],
+                "links": {
+                    "self": f"/api/slots?from={first.isoformat()}&to={last.isoformat()}"
+                },
+            },
+            "public, max-age=30, s-maxage=60",
+        )
+
+    @app.get("/api/slots/{date_value}")
+    def get_dated_slot(request: Request, date_value: str) -> JSONResponse:
+        try:
+            day = parse_date(date_value)
+        except SlotRequestError as exc:
+            return error_response(
+                request, exc.status_code, exc.code, message=exc.message
+            )
+        return read_slot(
+            request,
+            lambda: resolved_services.catalog.get_slot(day),
+            "public, max-age=30, s-maxage=60",
         )
 
     @app.post("/internal/reconcile")
@@ -165,3 +324,13 @@ def _safe_message(status_code: int) -> str:
     if status_code >= 500:
         return "The request could not be completed."
     return "The request is invalid."
+
+
+class SlotRequestError(ValueError):
+    """A safely renderable Slot request parsing failure."""
+
+    def __init__(self, status_code: int, code: str, message: str) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.code = code
+        self.message = message

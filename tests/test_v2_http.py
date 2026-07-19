@@ -1,21 +1,68 @@
 """Tests for the injectable v2 FastAPI shell."""
 
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
 
 from daily_miku.config import Settings
-from daily_miku.content_source import InMemoryContentSource, ScanStatus, TaggedItem
-from daily_miku.domain import FixedClock
+from daily_miku.content_source import (
+    ContentFailure,
+    InMemoryContentSource,
+    ScanStatus,
+    TaggedItem,
+)
+from daily_miku.domain import FixedClock, RecordingMethod, SelectionDay, SlotCandidate
 from daily_miku.http import create_app
 from daily_miku.ledger.memory import InMemoryLedger
+from daily_miku.ledger.port import LedgerDependencyError
 from daily_miku.ledger.postgres import PostgresLedger
 from daily_miku.logging_config import JSONFormatter
 from daily_miku.services import build_services
 
 pytestmark = pytest.mark.unit
+
+
+def slot_client(*, lookup_failure: ContentFailure | None = None) -> TestClient:
+    """Build a complete isolated Slot API fixture."""
+    settings = Settings.in_memory()
+    observed_at = datetime(2026, 7, 16, 16, 3, tzinfo=timezone.utc)
+    ledger = InMemoryLedger()
+    ledger.record_candidate(
+        SelectionDay(date(2026, 7, 17)),
+        SlotCandidate(3, RecordingMethod.OBSERVED, observed_at),
+    )
+    ledger.record_candidate(
+        SelectionDay(date(2026, 7, 18)),
+        SlotCandidate(8, RecordingMethod.LEGACY, observed_at),
+    )
+    ledger.record_candidate(
+        SelectionDay(date(2026, 7, 18)),
+        SlotCandidate(9, RecordingMethod.MANUAL, observed_at),
+    )
+    source = InMemoryContentSource(
+        (
+            TaggedItem(
+                3,
+                source_url="https://example.com/three",
+                title="Three",
+                excerpt="Description",
+                domain="example.com",
+                tags=("daily-miku",),
+            ),
+            TaggedItem(8, source_url="https://example.com/eight", title="Eight"),
+            TaggedItem(9, source_url="https://example.com/nine", title="Nine"),
+        ),
+        lookup_failure=lookup_failure,
+    )
+    services = build_services(
+        settings,
+        clock=FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
+        ledger=ledger,
+        content_source=source,
+    )
+    return TestClient(create_app(services=services))
 
 
 def test_composition_root_builds_an_in_memory_http_graph() -> None:
@@ -91,6 +138,146 @@ def test_request_validation_uses_the_common_error_envelope() -> None:
         "details": {},
         "request_id": response.headers["X-Request-ID"],
     }
+
+
+def test_dated_today_and_range_return_complete_shared_representations() -> None:
+    client = slot_client()
+
+    selected = client.get("/api/slots/2026-07-17")
+    today = client.get("/api/slots/today")
+    calendar_range = client.get(
+        "/api/slots", params={"from": "2026-07-17", "to": "2026-07-19"}
+    )
+
+    assert (
+        selected.status_code == today.status_code == calendar_range.status_code == 200
+    )
+    assert selected.json() == {
+        "date": "2026-07-17",
+        "state": "selected",
+        "items": [
+            {
+                "raindrop_id": 3,
+                "title": "Three",
+                "excerpt": "Description",
+                "source_url": "https://example.com/three",
+                "image_url": "/image/2026-07-17",
+                "domain": "example.com",
+                "tags": ["daily-miku"],
+                "recording_method": "observed",
+                "first_observed_at": "2026-07-16T16:03:00Z",
+            }
+        ],
+        "links": {
+            "self": "/api/slots/2026-07-17",
+            "previous": "/api/slots/2026-07-16",
+            "next": "/api/slots/2026-07-18",
+        },
+    }
+    assert today.json()["state"] == "empty"
+    assert [item["state"] for item in calendar_range.json()["items"]] == [
+        "selected",
+        "conflict",
+        "empty",
+    ]
+    assert calendar_range.json()["links"]["self"] == (
+        "/api/slots?from=2026-07-17&to=2026-07-19"
+    )
+    assert "s-maxage" in selected.headers["Cache-Control"]
+    assert selected.headers["ETag"].startswith('"')
+    assert calendar_range.headers["ETag"].startswith('"')
+
+
+def test_latest_includes_conflict_and_random_excludes_it() -> None:
+    client = slot_client()
+
+    latest = client.get("/api/slots/latest")
+    random = client.get("/api/slots/random")
+
+    assert latest.status_code == random.status_code == 200
+    assert latest.json()["state"] == "conflict"
+    assert [item["raindrop_id"] for item in latest.json()["items"]] == [8, 9]
+    assert random.json()["date"] == "2026-07-17"
+    assert random.json()["state"] == "selected"
+    assert random.headers["Cache-Control"] == "no-store"
+
+
+@pytest.mark.parametrize(
+    ("url", "status", "code"),
+    [
+        ("/api/slots/not-a-date", 400, "date_malformed"),
+        ("/api/slots/2026-02-30", 400, "date_malformed"),
+        ("/api/slots/2026-07-20", 422, "future_selection_day"),
+        ("/api/slots?from=2026-07-17", 400, "range_invalid"),
+        ("/api/slots?from=nope&to=2026-07-19", 400, "date_malformed"),
+        ("/api/slots?from=2026-07-19&to=2026-07-18", 400, "range_invalid"),
+        ("/api/slots?from=2025-07-18&to=2026-07-19", 400, "range_invalid"),
+        ("/api/slots?from=2026-07-19&to=2026-07-20", 422, "future_selection_day"),
+    ],
+)
+def test_slot_validation_has_exact_status_and_safe_envelope(
+    url: str, status: int, code: str
+) -> None:
+    response = slot_client().get(url)
+
+    assert response.status_code == status
+    assert response.json()["error"]["code"] == code
+    assert response.json()["error"]["details"] == {}
+    assert response.json()["error"]["request_id"] == response.headers["X-Request-ID"]
+
+
+def test_selector_absence_remains_distinct_from_dependency_failure() -> None:
+    empty_services = build_services(
+        Settings.in_memory(),
+        clock=FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
+        ledger=InMemoryLedger(),
+        content_source=InMemoryContentSource(),
+    )
+    no_result = TestClient(create_app(services=empty_services)).get("/api/slots/latest")
+    random_no_result = TestClient(create_app(services=empty_services)).get(
+        "/api/slots/random"
+    )
+    assert no_result.status_code == 404
+    assert no_result.json()["error"]["code"] == "slot_not_found"
+    assert random_no_result.status_code == 404
+    assert random_no_result.json()["error"]["code"] == "slot_not_found"
+
+
+def test_ledger_dependency_failure_is_no_store_503() -> None:
+    class FailingLedger(InMemoryLedger):
+        def candidates_for(self, day: SelectionDay) -> tuple[SlotCandidate, ...]:
+            raise LedgerDependencyError("database unavailable")
+
+    services = build_services(
+        Settings.in_memory(),
+        clock=FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
+        ledger=FailingLedger(),
+        content_source=InMemoryContentSource(),
+    )
+
+    response = TestClient(create_app(services=services)).get("/api/slots/2026-07-19")
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "ledger_unavailable"
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+@pytest.mark.parametrize(
+    ("failure", "status", "code"),
+    [
+        (ContentFailure.UPSTREAM, 502, "content_upstream_failed"),
+        (ContentFailure.UNAVAILABLE, 503, "content_unavailable"),
+        (ContentFailure.TIMEOUT, 504, "content_timeout"),
+    ],
+)
+def test_content_dependency_failure_classes_are_distinct(
+    failure: ContentFailure, status: int, code: str
+) -> None:
+    dependency = slot_client(lookup_failure=failure).get("/api/slots/2026-07-17")
+
+    assert dependency.status_code == status
+    assert dependency.json()["error"]["code"] == code
+    assert dependency.headers["Cache-Control"] == "no-store"
 
 
 def test_internal_reconcile_requires_bearer_authentication() -> None:

@@ -49,7 +49,12 @@ def build_services(
         calendar=calendar,
         ledger=resolved_ledger,
         content_source=resolved_content_source,
-        catalog=SlotCatalog(resolved_ledger, calendar, resolved_clock),
+        catalog=SlotCatalog(
+            resolved_ledger,
+            calendar,
+            resolved_clock,
+            content_source=resolved_content_source,
+        ),
         reconciler=Reconciler(
             resolved_ledger, resolved_content_source, calendar, resolved_clock
         ),

@@ -1,19 +1,21 @@
 """CLI commands for daily-miku-base."""
 
 import json
+import logging
 import re
 import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
 
 from . import email as email_module
+from .catalog import CatalogSlot, SlotCatalog, slot_document
 from .config import (
     ConfigurationError,
     InitializationSettings,
     LedgerSettings,
     Settings,
 )
-from .content_source import RaindropContentSource
+from .content_source import ContentDependencyError, RaindropContentSource
 from .correction import SelectionCorrector
 from .domain import Calendar, FutureSelectionDay, SystemClock
 from .initialize import InitializationDependencyError, LedgerInitializer
@@ -28,6 +30,8 @@ from .ledger.port import (
 from .raindrop import get_client
 from .reconcile import Reconciler, ReconciliationDependencyError
 from .services import build_services
+
+logger = logging.getLogger("daily_miku.v2.cli")
 
 
 def _error_document(code: str, message: str) -> dict[str, object]:
@@ -49,6 +53,101 @@ def _correction_document(record: CorrectionRecord) -> dict[str, object]:
         "operator": record.operator,
         "corrected_at": record.corrected_at.isoformat().replace("+00:00", "Z"),
     }
+
+
+def read_slot(
+    catalog: SlotCatalog, requested_date: date | None, *, json_output: bool = False
+) -> int:
+    """Read and render one Slot through the shared catalog contract."""
+    try:
+        slot = (
+            catalog.today()
+            if requested_date is None
+            else catalog.get_slot(requested_date)
+        )
+        document = slot_document(slot, catalog.calendar.today(catalog.clock))
+        if json_output:
+            print(json.dumps(document))
+        else:
+            _print_human_slot(slot)
+    except FutureSelectionDay as exc:
+        if json_output:
+            print(json.dumps(_error_document("future_selection_day", str(exc))))
+        else:
+            print(str(exc), file=sys.stderr)
+        return 5
+    except (LedgerDependencyError, ContentDependencyError):
+        message = "Current Daily Slot data is temporarily unavailable."
+        if json_output:
+            print(json.dumps(_error_document("slot_dependency_failed", message)))
+        else:
+            print(message, file=sys.stderr)
+        return 4
+    except Exception:
+        logger.exception("unexpected_slot_read_failure")
+        message = "An unexpected Daily Slot read failure occurred."
+        if json_output:
+            print(json.dumps(_error_document("internal_error", message)))
+        else:
+            print(message, file=sys.stderr)
+        return 1
+
+    return 0
+
+
+def _print_human_slot(slot: CatalogSlot) -> None:
+    """Render complete state-aware operator output."""
+    print(f"Daily Slot {slot.day.value.isoformat()}: {slot.state.value}")
+    if not slot.items:
+        print("The Daily Slot is empty.")
+        return
+    for item in slot.items:
+        print(f"  {item.title}")
+        print(f"    Source: {item.source_url or '(unavailable)'}")
+        print(f"    Raindrop ID: {item.raindrop_id}")
+
+
+def run_slot_read(date_value: str | None, *, json_output: bool = False) -> int:
+    """Validate a Slot invocation, compose dependencies, and execute it."""
+    requested_date: date | None = None
+    if date_value is not None:
+        try:
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_value):
+                raise ValueError
+            requested_date = date.fromisoformat(date_value)
+        except ValueError:
+            message = "DATE must be a valid YYYY-MM-DD calendar date."
+            if json_output:
+                print(json.dumps(_error_document("invocation_invalid", message)))
+            else:
+                print(message, file=sys.stderr)
+            return 2
+    try:
+        settings = Settings.from_environment()
+    except ConfigurationError as exc:
+        if json_output:
+            print(json.dumps(_error_document("configuration_invalid", str(exc))))
+        else:
+            print(str(exc), file=sys.stderr)
+        return 3
+    try:
+        catalog = build_services(settings).catalog
+    except (LedgerDependencyError, ContentDependencyError):
+        message = "Current Daily Slot data is temporarily unavailable."
+        if json_output:
+            print(json.dumps(_error_document("slot_dependency_failed", message)))
+        else:
+            print(message, file=sys.stderr)
+        return 4
+    except Exception:
+        logger.exception("unexpected_slot_service_construction_failure")
+        message = "An unexpected Daily Slot read failure occurred."
+        if json_output:
+            print(json.dumps(_error_document("internal_error", message)))
+        else:
+            print(message, file=sys.stderr)
+        return 1
+    return read_slot(catalog, requested_date, json_output=json_output)
 
 
 def initialize_ledger(
