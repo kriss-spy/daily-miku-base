@@ -1,0 +1,21 @@
+name: Reconcile Daily Miku v2
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  reconcile:
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.ENABLE_V2_RECONCILIATION == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reconcile complete tagged set
+        env:
+          RECONCILE_URL: ${{ secrets.DAILY_MIKU_RECONCILE_URL }}
+          RECONCILE_SECRET: ${{ secrets.DAILY_MIKU_RECONCILE_SECRET }}
+        run: >-
+          curl --fail-with-body --silent --show-error
+          --request POST
+          --header "Authorization: Bearer ${RECONCILE_SECRET}"
+          "${RECONCILE_URL}/internal/reconcile"

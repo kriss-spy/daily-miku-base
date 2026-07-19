@@ -5,7 +5,7 @@ import sys
 from . import cli
 
 
-def main():
+def main() -> None:
     """Main CLI entry point."""
     if len(sys.argv) < 2:
         print("Usage: daily-miku <command> [args]")
@@ -37,6 +37,22 @@ def main():
         cli.list_recent(limit)
     elif command == "send-email":
         cli.send_email()
+    elif command == "ledger":
+        if len(sys.argv) < 3 or sys.argv[2] != "reconcile":
+            print("Usage: daily-miku ledger reconcile [--json]", file=sys.stderr)
+            sys.exit(2)
+        options = sys.argv[3:]
+        if any(option != "--json" for option in options) or options.count("--json") > 1:
+            if "--json" in options:
+                print(
+                    '{"status":"failed","error":{"code":"invocation_invalid",'
+                    '"message":"Usage: daily-miku ledger reconcile [--json]",'
+                    '"details":{}}}'
+                )
+            else:
+                print("Usage: daily-miku ledger reconcile [--json]", file=sys.stderr)
+            sys.exit(2)
+        sys.exit(cli.run_ledger_reconcile(json_output="--json" in options))
     elif command == "serve":
         # Start development server
         import uvicorn

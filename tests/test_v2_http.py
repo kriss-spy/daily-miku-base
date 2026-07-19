@@ -1,11 +1,14 @@
 """Tests for the injectable v2 FastAPI shell."""
 
 import json
+from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
 
 from daily_miku.config import Settings
+from daily_miku.content_source import InMemoryContentSource, ScanStatus, TaggedItem
+from daily_miku.domain import FixedClock
 from daily_miku.http import create_app
 from daily_miku.ledger.memory import InMemoryLedger
 from daily_miku.ledger.postgres import PostgresLedger
@@ -86,5 +89,84 @@ def test_request_validation_uses_the_common_error_envelope() -> None:
         "code": "request_validation_failed",
         "message": "The request is invalid.",
         "details": {},
+        "request_id": response.headers["X-Request-ID"],
+    }
+
+
+def test_internal_reconcile_requires_bearer_authentication() -> None:
+    settings = Settings.in_memory()
+    source = InMemoryContentSource((TaggedItem(7),))
+    services = build_services(
+        settings,
+        clock=FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
+        ledger=InMemoryLedger(),
+        content_source=source,
+    )
+    client = TestClient(create_app(services=services))
+
+    missing = client.post("/internal/reconcile")
+    invalid = client.post(
+        "/internal/reconcile", headers={"Authorization": "Bearer incorrect"}
+    )
+    non_ascii = client.post(
+        "/internal/reconcile",
+        headers=[(b"authorization", b"Bearer incorrect-\xe9")],
+    )
+
+    assert missing.status_code == invalid.status_code == 401
+    assert missing.headers["WWW-Authenticate"] == "Bearer"
+    assert missing.json()["error"]["code"] == "authentication_required"
+    assert invalid.json()["error"]["code"] == "authentication_required"
+    assert non_ascii.status_code == 401
+    assert source.scan_count == 0
+
+
+def test_internal_reconcile_invokes_shared_idempotent_service() -> None:
+    settings = Settings.in_memory()
+    source = InMemoryContentSource((TaggedItem(7), TaggedItem(9)))
+    services = build_services(
+        settings,
+        clock=FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
+        ledger=InMemoryLedger(),
+        content_source=source,
+    )
+    client = TestClient(create_app(services=services))
+    headers = {"Authorization": "Bearer not-a-real-secret"}
+
+    first = client.post("/internal/reconcile", headers=headers)
+    second = client.post("/internal/reconcile", headers=headers)
+
+    assert first.status_code == second.status_code == 200
+    assert first.json() == {
+        "run_id": 1,
+        "status": "complete",
+        "discovered": 2,
+        "inserted": 2,
+    }
+    assert second.json()["inserted"] == 0
+    assert services.reconciler.content_source is services.content_source
+    assert services.reconciler.ledger is services.ledger
+
+
+def test_internal_reconcile_exposes_incomplete_run_as_dependency_failure() -> None:
+    settings = Settings.in_memory()
+    source = InMemoryContentSource((TaggedItem(7),), status=ScanStatus.INCOMPLETE)
+    services = build_services(
+        settings,
+        clock=FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
+        ledger=InMemoryLedger(),
+        content_source=source,
+    )
+
+    response = TestClient(create_app(services=services)).post(
+        "/internal/reconcile",
+        headers={"Authorization": "Bearer not-a-real-secret"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["error"] == {
+        "code": "injected_scan_failure",
+        "message": "The tagged set could not be scanned completely.",
+        "details": {"run_id": 1, "status": "incomplete", "discovered": 1},
         "request_id": response.headers["X-Request-ID"],
     }

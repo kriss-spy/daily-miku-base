@@ -6,7 +6,74 @@ from datetime import datetime
 from pathlib import Path
 
 from . import email as email_module
+from .config import ConfigurationError, Settings
+from .ledger.port import RunStatus
 from .raindrop import get_client
+from .reconcile import Reconciler, ReconciliationDependencyError
+from .services import build_services
+
+
+def reconcile_ledger(reconciler: Reconciler, *, json_output: bool = False) -> int:
+    """Run shared reconciliation and render its safe operator report."""
+    try:
+        report = reconciler.reconcile()
+    except ReconciliationDependencyError:
+        document = {
+            "status": "failed",
+            "error": {
+                "code": "reconciliation_dependency_failed",
+                "message": "Reconciliation could not access required storage.",
+                "details": {},
+            },
+        }
+        if json_output:
+            print(json.dumps(document))
+        else:
+            print(
+                "Reconciliation could not access required storage.",
+                file=sys.stderr,
+            )
+        return 4
+
+    if json_output:
+        print(json.dumps(report.as_dict()))
+    elif report.status is RunStatus.COMPLETE:
+        print(
+            f"Reconciliation complete: discovered {report.discovered_count}, "
+            f"inserted {report.inserted_count} (run {report.run_id})."
+        )
+    else:
+        print(
+            f"Reconciliation {report.status.value}: {report.error_message}",
+            file=sys.stderr,
+        )
+    return 0 if report.status is RunStatus.COMPLETE else 4
+
+
+def run_ledger_reconcile(*, json_output: bool = False) -> int:
+    """Build configured services and execute the reconciliation command."""
+    try:
+        settings = Settings.from_environment()
+    except ConfigurationError as exc:
+        if json_output:
+            print(
+                json.dumps(
+                    {
+                        "status": "failed",
+                        "error": {
+                            "code": "configuration_invalid",
+                            "message": str(exc),
+                            "details": {},
+                        },
+                    }
+                )
+            )
+        else:
+            print(str(exc), file=sys.stderr)
+        return 3
+    return reconcile_ledger(
+        build_services(settings).reconciler, json_output=json_output
+    )
 
 
 def fetch_today():
@@ -43,7 +110,7 @@ def test_connection():
 
     if client.test_connection():
         print("✓ Connection successful!")
-        print(f"  Token: {client.token[:10]}...")
+        print(f"  Token: {client.token[:10]}...")  # type: ignore[index]
         print(f"  Tag: #{client.tag}")
 
         # Fetch a sample to verify tag works

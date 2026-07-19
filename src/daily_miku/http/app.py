@@ -1,6 +1,7 @@
 """FastAPI application factory for Daily Miku v2."""
 
 import logging
+import secrets
 from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request
@@ -15,6 +16,8 @@ from ..logging_config import (
     set_request_id,
     setup_logging,
 )
+from ..ledger.port import RunStatus
+from ..reconcile import ReconciliationDependencyError
 from ..services import Services, build_services
 
 logger = logging.getLogger("daily_miku.v2")
@@ -60,20 +63,73 @@ def create_app(
         finally:
             reset_request_id(token)
 
-    def error_response(request: Request, status_code: int, code: str) -> JSONResponse:
+    def error_response(
+        request: Request,
+        status_code: int,
+        code: str,
+        *,
+        message: str | None = None,
+        details: dict[str, object] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> JSONResponse:
         request_id = request.state.request_id
+        response_headers = {"X-Request-ID": request_id}
+        response_headers.update(headers or {})
         return JSONResponse(
             status_code=status_code,
             content={
                 "error": {
                     "code": code,
-                    "message": _safe_message(status_code),
-                    "details": {},
+                    "message": message or _safe_message(status_code),
+                    "details": details or {},
                     "request_id": request_id,
                 },
             },
-            headers={"X-Request-ID": request_id},
+            headers=response_headers,
         )
+
+    @app.post("/internal/reconcile")
+    def reconcile(request: Request) -> JSONResponse:
+        authorization = request.headers.get("Authorization", "")
+        scheme, separator, credential = authorization.partition(" ")
+        expected = resolved_settings.reconcile_secret.get_secret_value()
+        if (
+            not separator
+            or scheme.lower() != "bearer"
+            or not secrets.compare_digest(
+                credential.encode("utf-8"), expected.encode("utf-8")
+            )
+        ):
+            return error_response(
+                request,
+                401,
+                "authentication_required",
+                message="Valid bearer authentication is required.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        try:
+            report = resolved_services.reconciler.reconcile()
+        except ReconciliationDependencyError:
+            return error_response(
+                request,
+                503,
+                "reconciliation_dependency_failed",
+                message="Reconciliation could not access required storage.",
+            )
+        if report.status is not RunStatus.COMPLETE:
+            return error_response(
+                request,
+                503,
+                report.error_code or "reconciliation_failed",
+                message=report.error_message,
+                details={
+                    "run_id": report.run_id,
+                    "status": report.status.value,
+                    "discovered": report.discovered_count,
+                },
+            )
+        return JSONResponse(report.as_dict())
 
     @app.exception_handler(StarletteHTTPException)
     def handle_http_error(

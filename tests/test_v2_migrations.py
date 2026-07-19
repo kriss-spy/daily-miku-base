@@ -1,6 +1,7 @@
 """Tests for transactional numbered v2 database migrations."""
 
 from copy import deepcopy
+from importlib.resources import files
 import re
 from types import TracebackType
 
@@ -93,16 +94,16 @@ class TestMigrationRunner:
         first = runner.apply()
         second = runner.apply()
 
-        assert first.applied_versions == (1,)
+        assert first.applied_versions == (1, 2)
         assert second.applied_versions == ()
-        assert second.current_version == runner.expected_version == 1
+        assert second.current_version == runner.expected_version == 2
         assert database.tables == {
             "schema_migrations",
             "selection_ledger",
             "selection_corrections",
             "reconciliation_runs",
         }
-        assert runner.current_version() == 1
+        assert runner.current_version() == 2
 
     def test_failure_rolls_back_the_complete_apply(self) -> None:
         database = MigrationDatabase()
@@ -114,3 +115,17 @@ class TestMigrationRunner:
 
         assert database.tables == set()
         assert database.versions == {}
+
+
+def test_reconciliation_state_migration_constrains_terminal_shapes() -> None:
+    sql = (
+        files("daily_miku.ledger.migrations")
+        .joinpath("0002_reconciliation_run_state.sql")
+        .read_text(encoding="utf-8")
+    )
+
+    assert "reconciliation_runs_terminal_state_check" in sql
+    assert "status = 'running'" in sql
+    assert "status = 'complete'" in sql
+    assert "status IN ('incomplete', 'failed')" in sql
+    assert "error_code IS NOT NULL" in sql

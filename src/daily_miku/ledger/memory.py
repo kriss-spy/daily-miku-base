@@ -1,8 +1,25 @@
 """In-memory Selection Ledger adapter."""
 
 from dataclasses import dataclass, field
+from datetime import datetime
+from threading import Lock
 
 from ..domain import SelectionDay, SlotCandidate
+from .port import RunStatus
+
+
+@dataclass(frozen=True)
+class MemoryReconciliationRun:
+    """Observable durable-run equivalent used by tests."""
+
+    run_id: int
+    status: RunStatus
+    started_at: datetime
+    finished_at: datetime | None = None
+    discovered_count: int = 0
+    inserted_count: int = 0
+    error_code: str | None = None
+    error_message: str | None = None
 
 
 @dataclass
@@ -14,6 +31,8 @@ class InMemoryLedger:
     )
     read_count: int = 0
     write_count: int = 0
+    runs: list[MemoryReconciliationRun] = field(default_factory=list)
+    _lock: Lock = field(default_factory=Lock, repr=False)
 
     def record_candidate(self, day: SelectionDay, candidate: SlotCandidate) -> bool:
         """Record a candidate once, preserving its original Selection Day."""
@@ -32,3 +51,70 @@ class InMemoryLedger:
             if recorded_day == day
         )
         return tuple(sorted(candidates, key=lambda item: item.raindrop_id))
+
+    def start_reconciliation(self, started_at: datetime) -> int:
+        """Create a running reconciliation record."""
+        with self._lock:
+            run_id = len(self.runs) + 1
+            self.runs.append(
+                MemoryReconciliationRun(run_id, RunStatus.RUNNING, started_at)
+            )
+            return run_id
+
+    def complete_reconciliation(
+        self,
+        run_id: int,
+        day: SelectionDay,
+        candidates: tuple[SlotCandidate, ...],
+        finished_at: datetime,
+    ) -> int:
+        """Atomically record unseen candidates and a successful run."""
+        with self._lock:
+            run = self._running_run(run_id)
+            inserted_count = 0
+            for candidate in candidates:
+                if candidate.raindrop_id not in self._records:
+                    self._records[candidate.raindrop_id] = (day, candidate)
+                    inserted_count += 1
+            self.write_count += len(candidates)
+            self.runs[run_id - 1] = MemoryReconciliationRun(
+                run_id,
+                RunStatus.COMPLETE,
+                run.started_at,
+                finished_at,
+                len(candidates),
+                inserted_count,
+            )
+            return inserted_count
+
+    def finish_reconciliation(
+        self,
+        run_id: int,
+        status: RunStatus,
+        finished_at: datetime,
+        discovered_count: int,
+        error_code: str,
+        error_message: str,
+    ) -> None:
+        """Record an unsuccessful terminal run."""
+        if status not in (RunStatus.INCOMPLETE, RunStatus.FAILED):
+            raise ValueError("unsuccessful reconciliation requires terminal failure")
+        with self._lock:
+            run = self._running_run(run_id)
+            self.runs[run_id - 1] = MemoryReconciliationRun(
+                run_id,
+                status,
+                run.started_at,
+                finished_at,
+                discovered_count,
+                error_code=error_code,
+                error_message=error_message,
+            )
+
+    def _running_run(self, run_id: int) -> MemoryReconciliationRun:
+        if run_id <= 0 or run_id > len(self.runs):
+            raise RuntimeError(f"Unknown reconciliation run {run_id}")
+        run = self.runs[run_id - 1]
+        if run.status is not RunStatus.RUNNING:
+            raise RuntimeError(f"Reconciliation run {run_id} is already finished")
+        return run
