@@ -20,16 +20,10 @@ Build an operational vertical slice that can record and read Daily Slots without
 - Implement Postgres and in-memory Ledger adapters and Raindrop API and in-memory content-source adapters. Complete Raindrop scans use documented pagination and never depend on `lastUpdate` sorting.
 - Implement the Reconciler and the minimum Slot Catalog behavior needed to resolve a dated Slot and today in all three states.
 - Add documented operator commands: `ledger initialize`, `ledger reconcile`, and `ledger correct`.
-- Add the authenticated internal reconcile endpoint. A lightweight GitHub Actions workflow calls it every 15 minutes; the endpoint and commands invoke the same Reconciler.
+- Add the authenticated internal reconcile endpoint and a disabled lightweight GitHub Actions workflow configured to call it every 15 minutes. The endpoint and commands invoke the same Reconciler; preview reconciliation remains manually invoked.
 - Establish unit, adapter-contract, migration, CLI, and HTTP test seams. Automated tests use fakes and do not contact external services.
 
-### Operator Safety
-
-`daily-miku ledger initialize` is dry-run by default. It reports proposed legacy rows, conflicts, and duplicate identities; `--apply` is required to write. Applying the same approved import again is a no-op.
-
-`daily-miku ledger reconcile` performs routine full-set reconciliation and reports inserted and already-known IDs plus run completeness. Overlapping runs are safe.
-
-`daily-miku ledger correct RAINDROP_ID DATE --reason TEXT` is the only supported exception to normal insert-only dates. It records the old and new Selection Day, old and new recording method, reason, configured operator identity, and timestamp in append-only correction history. The resulting ledger row uses the `manual` recording method.
+The operator safety and output contracts are defined in [the CLI and email contract](cli-email-contract.md). The roadmap does not introduce a second definition of those commands.
 
 ### Acceptance
 
@@ -37,9 +31,9 @@ Build an operational vertical slice that can record and read Daily Slots without
 - Empty, selected, and conflict Slots derive solely from ledger cardinality; no read writes or reconciles.
 - Initialization dry-run is complete and deterministic, apply is transactional and idempotent, and accepted conflicts remain visible.
 - Routine reconciliation inserts every unseen tagged Raindrop exactly once and preserves rows after tag removal or metadata changes.
-- A correction is impossible without a reason and leaves an auditable before-and-after record.
+- A correction is impossible without a reason stating its reliable historical evidence and leaves an auditable before-and-after record.
 - Failed or incomplete Raindrop scans do not claim a successful reconciliation run.
-- The scheduler authenticates to the internal endpoint, duplicate invocations are harmless, and the recorded run history makes the 15-minute freshness target observable.
+- The disabled scheduler workflow authenticates to the internal endpoint, duplicate test invocations are harmless, and run history distinguishes complete, incomplete, and failed reconciliation.
 - Configuration failures are safe and explicit; tests, lint, type checks, and migrations pass from a clean checkout.
 
 Milestone 2 depends on this milestone's domain interfaces, schema, configuration, and fake adapters being stable.
@@ -56,7 +50,7 @@ Build the artwork-first daily experience and every operation needed to select, d
 - Implement `/`, `/today`, and `/{date}` with the responsive Editorial Date Rail and complete selected, empty, and conflict treatments.
 - Implement the dated Slot, today, latest, random, and range JSON contracts and the retained `/image/{date}` route.
 - Implement `slot today`, `slot get`, and `doctor` CLI contracts.
-- Implement durable Email Delivery storage, per-recipient reservations, retries, image-required messages, and the noon Asia/Shanghai GitHub Actions email workflow.
+- Implement `email send` with its contracted ordered validation, reconciliation, Slot, image, reservation, send, and recording preconditions; durable per-recipient storage and retries; image-required messages; and a disabled noon Asia/Shanghai GitHub Actions email workflow.
 - Add local static typography and assets, semantic HTML, keyboard-visible focus, reduced-motion behavior, and layouts verified from 320 CSS pixels upward.
 
 ### Acceptance
@@ -91,8 +85,9 @@ Complete the public v2 contract, prove it in production-shaped preview infrastru
 
 - Archive pagination is stable newest-first; ranges preserve empty dates; search returns complete Slot groups; statistics distinguish slots from candidates.
 - All public HTML, JSON, CLI, image, and email contracts pass against the protected preview with production-shaped isolated dependencies.
-- Reconciliation normally begins within 15 minutes of a tag change, while alerts distinguish scheduler delay, incomplete scans, and dependency failures. The target is best-effort because GitHub Actions does not guarantee exact start time.
-- Every v1-addressable date resolves to the approved Raindrop ID, accepted conflict, correction, or reviewed image exception.
+- Successful complete reconciliation runs normally begin no more than 15 minutes apart, while alerts distinguish scheduler delay, incomplete scans, and dependency failures. This best-effort schedule narrows the unknown observation window but cannot measure latency from an unknown tag-change instant.
+- Every v1-addressable date resolves to the same Raindrop ID unless a recorded correction or accepted conflict intentionally changes it.
+- Every legacy selected Slot separately has a reviewed image classification or image exception; an image exception never excuses a selection mismatch.
 - Migration apply is idempotent, schema version is verified, every legacy selected Slot has an image classification, and no unreviewed warning remains.
 - Production configuration, pooled Postgres access, Blob access, SMTP, scheduler authentication, logs, monitoring, and a schema-compatible v2 recovery deployment are ready.
 - Atomic promotion and all production smoke checks succeed; a manual reconciliation and its repeat are safe; tagging resumes; the next scheduled v2 email creates durable outcomes.

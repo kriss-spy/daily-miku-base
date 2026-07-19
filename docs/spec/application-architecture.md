@@ -57,7 +57,7 @@ The Reconciler runs on exactly three triggers:
 2. A scheduled GitHub Actions trigger hitting the internal reconcile endpoint, guarded by a shared secret.
 3. Manual operator runs.
 
-The roadmap sets a 15-minute best-effort observation target. GitHub Actions owns the schedule because standard runners are free for this public repository while Vercel Hobby Cron permits only daily execution. The authenticated endpoint remains scheduler-independent and duplicate invocations remain safe.
+The roadmap configures a best-effort GitHub Actions schedule every 15 minutes because standard runners are free for this public repository while Vercel Hobby Cron permits only daily execution. This bounds normal intervals between complete observations; it cannot measure from the unknown tag-change instant. The authenticated endpoint remains scheduler-independent and duplicate invocations remain safe.
 
 ## Data Access
 

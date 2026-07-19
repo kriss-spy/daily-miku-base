@@ -33,7 +33,7 @@ The v1 names `fetch-today`, `fetch-date`, `test-connection`, `list`, and `send-e
 
 `ledger initialize` is dry-run by default. It completes a paginated scan, reports proposed legacy rows, conflicts, and duplicate identities, and writes only when `--apply` is present. Apply is transactional and idempotent. `ledger reconcile` performs the same routine full-set reconciliation used by email and the scheduled endpoint.
 
-`ledger correct` is the controlled exception to insert-only Selection Days. It requires a non-blank reason, changes the row to the `manual` recording method, and appends the former and new date and method, reason, operator identity, and timestamp to correction history. It never silently moves another candidate out of a resulting conflict.
+`ledger correct` is the controlled exception to insert-only Selection Days. It requires a non-blank reason that states the reliable historical evidence superseding the recorded approximation, changes the row to the `manual` recording method, and appends the former and new date and method, reason, operator identity, and timestamp to correction history. It never silently moves another candidate out of a resulting conflict.
 
 `image ingest` accepts a local raster file and an operator-supplied note describing the authorization basis. It applies the Image Pipeline's byte, type, decoding, dimension, normalization, metadata, and content-addressing policy before uploading and updating the Raindrop cover. It records provenance but does not claim that software independently verified reproduction rights.
 
