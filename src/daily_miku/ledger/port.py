@@ -1,10 +1,11 @@
 """Internal Selection Ledger contracts."""
 
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
 
-from ..domain import SelectionDay, SlotCandidate
+from ..domain import RecordingMethod, SelectionDay, SlotCandidate
 
 
 class LedgerDependencyError(RuntimeError):
@@ -20,6 +21,43 @@ class Ledger(Protocol):
 
     def candidates_for(self, day: SelectionDay) -> tuple[SlotCandidate, ...]:
         """Return candidates in deterministic identity order."""
+        ...
+
+
+class CandidateNotFound(ValueError):
+    """The requested Raindrop identity is not recorded in the ledger."""
+
+
+class CorrectionUnchanged(ValueError):
+    """A correction requested the candidate's existing Selection Day."""
+
+
+@dataclass(frozen=True)
+class CorrectionRecord:
+    """Immutable facts recorded for one audited Selection Day correction."""
+
+    raindrop_id: int
+    former_day: SelectionDay
+    new_day: SelectionDay
+    former_method: RecordingMethod
+    reason: str
+    operator: str
+    corrected_at: datetime
+    new_method: RecordingMethod = RecordingMethod.MANUAL
+
+
+class CorrectionLedger(Ledger, Protocol):
+    """Transactional mutation surface for audited manual corrections."""
+
+    def correct_candidate(
+        self,
+        raindrop_id: int,
+        new_day: SelectionDay,
+        reason: str,
+        operator: str,
+        corrected_at: datetime,
+    ) -> CorrectionRecord:
+        """Move one candidate and append its before-and-after audit facts."""
         ...
 
 
@@ -60,3 +98,7 @@ class ReconciliationLedger(Ledger, Protocol):
     ) -> None:
         """Record an incomplete or failed terminal outcome."""
         ...
+
+
+class OperationalLedger(ReconciliationLedger, CorrectionLedger, Protocol):
+    """Complete ledger surface required by the application composition root."""

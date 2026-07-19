@@ -3,9 +3,20 @@
 import pytest
 from pydantic import ValidationError
 
-from daily_miku.config import ConfigurationError, Settings
+from daily_miku.config import ConfigurationError, LedgerSettings, Settings
 
 pytestmark = pytest.mark.unit
+
+
+def test_ledger_settings_require_only_correction_configuration() -> None:
+    settings = LedgerSettings.from_environment(
+        DAILY_MIKU_OPERATOR="operator",
+        DATABASE_URL="postgresql://ledger",
+        _env_file=None,
+    )
+
+    assert settings.operator == "operator"
+    assert settings.database_url.get_secret_value() == "postgresql://ledger"
 
 
 def test_settings_apply_defaults_and_parse_recipients() -> None:

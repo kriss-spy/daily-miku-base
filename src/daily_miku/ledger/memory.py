@@ -4,8 +4,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from threading import Lock
 
-from ..domain import SelectionDay, SlotCandidate
-from .port import RunStatus
+from ..domain import RecordingMethod, SelectionDay, SlotCandidate
+from .port import (
+    CandidateNotFound,
+    CorrectionRecord,
+    CorrectionUnchanged,
+    RunStatus,
+)
 
 
 @dataclass(frozen=True)
@@ -32,6 +37,7 @@ class InMemoryLedger:
     read_count: int = 0
     write_count: int = 0
     runs: list[MemoryReconciliationRun] = field(default_factory=list)
+    corrections: list[CorrectionRecord] = field(default_factory=list)
     _lock: Lock = field(default_factory=Lock, repr=False)
 
     def record_candidate(self, day: SelectionDay, candidate: SlotCandidate) -> bool:
@@ -51,6 +57,45 @@ class InMemoryLedger:
             if recorded_day == day
         )
         return tuple(sorted(candidates, key=lambda item: item.raindrop_id))
+
+    def correct_candidate(
+        self,
+        raindrop_id: int,
+        new_day: SelectionDay,
+        reason: str,
+        operator: str,
+        corrected_at: datetime,
+    ) -> CorrectionRecord:
+        """Atomically move one candidate and retain its audit history."""
+        with self._lock:
+            existing = self._records.get(raindrop_id)
+            if existing is None:
+                raise CandidateNotFound(f"Raindrop {raindrop_id} is not recorded")
+            former_day, candidate = existing
+            if former_day == new_day:
+                raise CorrectionUnchanged(
+                    f"Raindrop {raindrop_id} is already assigned to {new_day.value}"
+                )
+            correction = CorrectionRecord(
+                raindrop_id,
+                former_day,
+                new_day,
+                candidate.recording_method,
+                reason,
+                operator,
+                corrected_at,
+            )
+            self._records[raindrop_id] = (
+                new_day,
+                SlotCandidate(
+                    raindrop_id,
+                    RecordingMethod.MANUAL,
+                    candidate.first_observed_at,
+                ),
+            )
+            self.corrections.append(correction)
+            self.write_count += 1
+            return correction
 
     def start_reconciliation(self, started_at: datetime) -> int:
         """Create a running reconciliation record."""

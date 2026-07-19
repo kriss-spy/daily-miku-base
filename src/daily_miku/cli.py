@@ -1,16 +1,163 @@
 """CLI commands for daily-miku-base."""
 
 import json
+import re
 import sys
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from . import email as email_module
-from .config import ConfigurationError, Settings
-from .ledger.port import RunStatus
+from .config import ConfigurationError, LedgerSettings, Settings
+from .correction import SelectionCorrector
+from .domain import Calendar, FutureSelectionDay, SystemClock
+from .ledger.postgres import PostgresLedger
+from .ledger.port import (
+    CandidateNotFound,
+    CorrectionRecord,
+    CorrectionUnchanged,
+    LedgerDependencyError,
+    RunStatus,
+)
 from .raindrop import get_client
 from .reconcile import Reconciler, ReconciliationDependencyError
 from .services import build_services
+
+
+def _error_document(code: str, message: str) -> dict[str, object]:
+    return {
+        "status": "failed",
+        "error": {"code": code, "message": message, "details": {}},
+    }
+
+
+def _correction_document(record: CorrectionRecord) -> dict[str, object]:
+    return {
+        "status": "corrected",
+        "raindrop_id": record.raindrop_id,
+        "former_selection_day": record.former_day.value.isoformat(),
+        "new_selection_day": record.new_day.value.isoformat(),
+        "former_recording_method": record.former_method.value,
+        "new_recording_method": record.new_method.value,
+        "reason": record.reason,
+        "operator": record.operator,
+        "corrected_at": record.corrected_at.isoformat().replace("+00:00", "Z"),
+    }
+
+
+def correct_selection_day(
+    corrector: SelectionCorrector,
+    raindrop_id: int,
+    new_date: date,
+    reason: str,
+    *,
+    json_output: bool = False,
+) -> int:
+    """Apply one correction and render safe audit facts."""
+    try:
+        record = corrector.correct(raindrop_id, new_date, reason)
+    except CorrectionUnchanged as exc:
+        document = {
+            "status": "unchanged",
+            "raindrop_id": raindrop_id,
+            "selection_day": new_date.isoformat(),
+        }
+        if json_output:
+            print(json.dumps(document))
+        else:
+            print(str(exc))
+        return 0
+    except (CandidateNotFound, FutureSelectionDay) as exc:
+        if json_output:
+            print(json.dumps(_error_document("correction_blocked", str(exc))))
+        else:
+            print(str(exc), file=sys.stderr)
+        return 5
+    except ValueError as exc:
+        if json_output:
+            print(json.dumps(_error_document("invocation_invalid", str(exc))))
+        else:
+            print(str(exc), file=sys.stderr)
+        return 2
+    except LedgerDependencyError:
+        message = "The Selection Ledger could not apply the correction."
+        if json_output:
+            print(json.dumps(_error_document("ledger_dependency_failed", message)))
+        else:
+            print(message, file=sys.stderr)
+        return 4
+    except Exception:
+        message = "An unexpected correction failure occurred."
+        if json_output:
+            print(json.dumps(_error_document("internal_error", message)))
+        else:
+            print(message, file=sys.stderr)
+        return 1
+
+    if json_output:
+        print(json.dumps(_correction_document(record)))
+    else:
+        print(
+            f"Corrected Raindrop {record.raindrop_id}: "
+            f"{record.former_day.value} ({record.former_method.value}) -> "
+            f"{record.new_day.value} ({record.new_method.value})."
+        )
+        print(f"Reason: {record.reason}")
+        print(
+            f"Operator: {record.operator}; corrected at {record.corrected_at.isoformat()}."
+        )
+    return 0
+
+
+def run_ledger_correct(
+    raindrop_id_value: str,
+    date_value: str,
+    reason: str,
+    *,
+    json_output: bool = False,
+) -> int:
+    """Validate arguments, build configured services, and apply a correction."""
+    try:
+        raindrop_id = int(raindrop_id_value)
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_value):
+            raise ValueError
+        new_date = date.fromisoformat(date_value)
+        if raindrop_id <= 0 or not reason.strip():
+            raise ValueError
+    except ValueError:
+        message = (
+            "RAINDROP_ID must be positive, DATE must be YYYY-MM-DD, and "
+            "--reason must not be blank."
+        )
+        if json_output:
+            print(json.dumps(_error_document("invocation_invalid", message)))
+        else:
+            print(message, file=sys.stderr)
+        return 2
+
+    try:
+        settings = LedgerSettings.from_environment()
+    except ConfigurationError as exc:
+        if json_output:
+            print(json.dumps(_error_document("configuration_invalid", str(exc))))
+        else:
+            print(str(exc), file=sys.stderr)
+        return 3
+    ledger = PostgresLedger.from_url(
+        settings.database_url.get_secret_value(), local_pool=not settings.serverless
+    )
+    corrector = SelectionCorrector(
+        ledger,
+        Calendar.named(settings.timezone_name),
+        SystemClock(),
+        settings.operator,
+    )
+    return correct_selection_day(
+        corrector,
+        raindrop_id,
+        new_date,
+        reason,
+        json_output=json_output,
+    )
 
 
 def reconcile_ledger(reconciler: Reconciler, *, json_output: bool = False) -> int:

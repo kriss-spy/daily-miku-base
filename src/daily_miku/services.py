@@ -5,8 +5,9 @@ from dataclasses import dataclass
 from .catalog import SlotCatalog
 from .config import Settings
 from .content_source import ContentSource, RaindropContentSource
+from .correction import SelectionCorrector
 from .domain import Calendar, Clock, SystemClock
-from .ledger.port import ReconciliationLedger
+from .ledger.port import OperationalLedger
 from .ledger.postgres import PostgresLedger
 from .reconcile import Reconciler
 
@@ -18,16 +19,17 @@ class Services:
     settings: Settings
     clock: Clock
     calendar: Calendar
-    ledger: ReconciliationLedger
+    ledger: OperationalLedger
     content_source: ContentSource
     catalog: SlotCatalog
     reconciler: Reconciler
+    corrector: SelectionCorrector
 
 
 def build_services(
     settings: Settings,
     clock: Clock | None = None,
-    ledger: ReconciliationLedger | None = None,
+    ledger: OperationalLedger | None = None,
     content_source: ContentSource | None = None,
 ) -> Services:
     """Build the v2 service graph, with optional adapters for isolated tests."""
@@ -48,5 +50,8 @@ def build_services(
         catalog=SlotCatalog(resolved_ledger, calendar, resolved_clock),
         reconciler=Reconciler(
             resolved_ledger, resolved_content_source, calendar, resolved_clock
+        ),
+        corrector=SelectionCorrector(
+            resolved_ledger, calendar, resolved_clock, settings.operator
         ),
     )

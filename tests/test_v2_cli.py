@@ -1,14 +1,21 @@
 """Tests for the v2 operator command surface."""
 
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 
 from daily_miku import cli, main
-from daily_miku.cli import reconcile_ledger
+from daily_miku.cli import correct_selection_day, reconcile_ledger
 from daily_miku.content_source import InMemoryContentSource, ScanStatus, TaggedItem
-from daily_miku.domain import Calendar, FixedClock
+from daily_miku.correction import SelectionCorrector
+from daily_miku.domain import (
+    Calendar,
+    FixedClock,
+    RecordingMethod,
+    SelectionDay,
+    SlotCandidate,
+)
 from daily_miku.ledger.memory import InMemoryLedger
 from daily_miku.reconcile import Reconciler
 
@@ -84,3 +91,143 @@ def test_invalid_json_invocation_emits_json_error(
     document = json.loads(capsys.readouterr().out)
     assert document["error"]["code"] == "invocation_invalid"
     assert document["error"]["details"] == {}
+
+
+def test_ledger_correct_json_reports_safe_audit_facts(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    now = datetime(2026, 7, 19, tzinfo=timezone.utc)
+    ledger = InMemoryLedger()
+    ledger.record_candidate(
+        SelectionDay(date(2026, 7, 18)),
+        SlotCandidate(4, RecordingMethod.OBSERVED, now),
+    )
+    corrector = SelectionCorrector(
+        ledger, Calendar.named("Asia/Shanghai"), FixedClock(now), "test-operator"
+    )
+
+    exit_code = correct_selection_day(
+        corrector,
+        4,
+        date(2026, 7, 17),
+        "Archived message",
+        json_output=True,
+    )
+
+    assert exit_code == 0
+    document = json.loads(capsys.readouterr().out)
+    assert document == {
+        "status": "corrected",
+        "raindrop_id": 4,
+        "former_selection_day": "2026-07-18",
+        "new_selection_day": "2026-07-17",
+        "former_recording_method": "observed",
+        "new_recording_method": "manual",
+        "reason": "Archived message",
+        "operator": "test-operator",
+        "corrected_at": "2026-07-19T00:00:00Z",
+    }
+
+
+def test_ledger_correct_future_date_is_domain_blocked(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    now = datetime(2026, 7, 19, tzinfo=timezone.utc)
+    corrector = SelectionCorrector(
+        InMemoryLedger(),
+        Calendar.named("Asia/Shanghai"),
+        FixedClock(now),
+        "test-operator",
+    )
+
+    exit_code = correct_selection_day(
+        corrector, 4, date(2026, 7, 20), "evidence", json_output=True
+    )
+
+    assert exit_code == 5
+    assert json.loads(capsys.readouterr().out)["error"]["code"] == "correction_blocked"
+
+
+def test_ledger_correct_same_date_is_successful_noop(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    now = datetime(2026, 7, 19, tzinfo=timezone.utc)
+    ledger = InMemoryLedger()
+    day = SelectionDay(date(2026, 7, 18))
+    ledger.record_candidate(day, SlotCandidate(4, RecordingMethod.OBSERVED, now))
+    corrector = SelectionCorrector(
+        ledger, Calendar.named("Asia/Shanghai"), FixedClock(now), "test-operator"
+    )
+
+    exit_code = correct_selection_day(
+        corrector, 4, day.value, "evidence", json_output=True
+    )
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "status": "unchanged",
+        "raindrop_id": 4,
+        "selection_day": "2026-07-18",
+    }
+    assert ledger.corrections == []
+
+
+def test_main_dispatches_ledger_correct(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str, str, bool]] = []
+    monkeypatch.setattr(
+        cli,
+        "run_ledger_correct",
+        lambda item, day, reason, *, json_output=False: calls.append(
+            (item, day, reason, json_output)
+        )
+        or 0,
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "daily-miku",
+            "ledger",
+            "correct",
+            "4",
+            "2026-07-17",
+            "--reason",
+            "Archived message",
+            "--json",
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        main.main()
+
+    assert exit_info.value.code == 0
+    assert calls == [("4", "2026-07-17", "Archived message", True)]
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["daily-miku", "ledger", "correct", "4", "2026-07-17"],
+        [
+            "daily-miku",
+            "ledger",
+            "correct",
+            "4",
+            "2026-07-17",
+            "--reason",
+            "evidence",
+            "--bad",
+            "--json",
+        ],
+    ],
+)
+def test_invalid_ledger_correct_shape_exits_two(
+    argv: list[str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr("sys.argv", argv)
+
+    with pytest.raises(SystemExit) as exit_info:
+        main.main()
+
+    assert exit_info.value.code == 2

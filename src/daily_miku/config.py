@@ -1,6 +1,6 @@
 """Validated configuration boundary for Daily Miku v2."""
 
-from typing import Any
+from typing import Any, Self
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import (
@@ -18,27 +18,17 @@ class ConfigurationError(RuntimeError):
     """Safe configuration failure that never includes submitted values."""
 
 
-class Settings(BaseSettings):
-    """Own all v2 environment parsing and validation."""
+class LedgerSettings(BaseSettings):
+    """Validate configuration required by ledger-only commands."""
 
     model_config = SettingsConfigDict(
         env_file=".env", extra="ignore", populate_by_name=True
     )
 
     timezone_name: str = Field("Asia/Shanghai", alias="DAILY_MIKU_TIMEZONE")
-    tag: str = Field("daily-miku", alias="DAILY_MIKU_TAG")
     serverless: bool = Field(False, alias="VERCEL")
     operator: str = Field(alias="DAILY_MIKU_OPERATOR")
-    reconcile_secret: SecretStr = Field(alias="DAILY_MIKU_RECONCILE_SECRET")
-    email_from: str = Field(alias="DAILY_MIKU_EMAIL_FROM")
-    email_recipients_value: str = Field(alias="DAILY_MIKU_EMAIL_RECIPIENTS")
-    raindrop_token: SecretStr = Field(alias="RAINDROP_TOKEN")
     database_url: SecretStr = Field(alias="DATABASE_URL")
-    blob_read_write_token: SecretStr = Field(alias="BLOB_READ_WRITE_TOKEN")
-    smtp_host: str = Field(alias="SMTP_HOST")
-    smtp_port: int = Field(587, alias="SMTP_PORT", ge=1, le=65535)
-    smtp_username: str = Field(alias="SMTP_USERNAME")
-    smtp_password: SecretStr = Field(alias="SMTP_PASSWORD")
 
     @field_validator("timezone_name")
     @classmethod
@@ -50,7 +40,53 @@ class Settings(BaseSettings):
             raise ValueError("unknown IANA timezone") from exc
         return value
 
-    @field_validator("tag", "operator", "smtp_host", "smtp_username")
+    @field_validator("operator")
+    @classmethod
+    def validate_operator(cls, value: str) -> str:
+        """Reject an empty audit identity."""
+        if not value.strip():
+            raise ValueError("must not be empty")
+        return value.strip()
+
+    @field_validator("database_url")
+    @classmethod
+    def validate_database_url(cls, value: SecretStr) -> SecretStr:
+        """Reject an empty database credential."""
+        if not value.get_secret_value().strip():
+            raise ValueError("must not be empty")
+        return value
+
+    @classmethod
+    def from_environment(cls, **kwargs: Any) -> Self:
+        """Load settings and reduce validation failures to safe field names."""
+        try:
+            return cls(**kwargs)
+        except ValidationError as exc:
+            fields = set()
+            for error in exc.errors():
+                field_name = str(error["loc"][0])
+                field = cls.model_fields.get(field_name)
+                fields.add(str(field.alias) if field and field.alias else field_name)
+            raise ConfigurationError(
+                f"Invalid configuration fields: {', '.join(sorted(fields))}"
+            ) from None
+
+
+class Settings(LedgerSettings):
+    """Own all v2 application environment parsing and validation."""
+
+    tag: str = Field("daily-miku", alias="DAILY_MIKU_TAG")
+    reconcile_secret: SecretStr = Field(alias="DAILY_MIKU_RECONCILE_SECRET")
+    email_from: str = Field(alias="DAILY_MIKU_EMAIL_FROM")
+    email_recipients_value: str = Field(alias="DAILY_MIKU_EMAIL_RECIPIENTS")
+    raindrop_token: SecretStr = Field(alias="RAINDROP_TOKEN")
+    blob_read_write_token: SecretStr = Field(alias="BLOB_READ_WRITE_TOKEN")
+    smtp_host: str = Field(alias="SMTP_HOST")
+    smtp_port: int = Field(587, alias="SMTP_PORT", ge=1, le=65535)
+    smtp_username: str = Field(alias="SMTP_USERNAME")
+    smtp_password: SecretStr = Field(alias="SMTP_PASSWORD")
+
+    @field_validator("tag", "smtp_host", "smtp_username")
     @classmethod
     def validate_nonempty(cls, value: str) -> str:
         """Reject empty operational identifiers."""
@@ -61,7 +97,6 @@ class Settings(BaseSettings):
     @field_validator(
         "reconcile_secret",
         "raindrop_token",
-        "database_url",
         "blob_read_write_token",
         "smtp_password",
     )
@@ -108,21 +143,6 @@ class Settings(BaseSettings):
     def email_recipients(self) -> tuple[str, ...]:
         """Return validated recipients in configured order."""
         return tuple(self.email_recipients_value.split(","))
-
-    @classmethod
-    def from_environment(cls, **kwargs: Any) -> "Settings":
-        """Load settings and reduce validation failures to safe field names."""
-        try:
-            return cls(**kwargs)
-        except ValidationError as exc:
-            fields = set()
-            for error in exc.errors():
-                field_name = str(error["loc"][0])
-                field = cls.model_fields.get(field_name)
-                fields.add(str(field.alias) if field and field.alias else field_name)
-            raise ConfigurationError(
-                f"Invalid configuration fields: {', '.join(sorted(fields))}"
-            ) from None
 
     @classmethod
     def in_memory(cls) -> "Settings":

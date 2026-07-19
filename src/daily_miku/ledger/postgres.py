@@ -8,7 +8,13 @@ from psycopg_pool import PoolTimeout
 
 from ..domain import RecordingMethod, SelectionDay, SlotCandidate
 from .database import ConnectionFactory, postgres_connections
-from .port import LedgerDependencyError, RunStatus
+from .port import (
+    CandidateNotFound,
+    CorrectionRecord,
+    CorrectionUnchanged,
+    LedgerDependencyError,
+    RunStatus,
+)
 
 
 @dataclass(frozen=True)
@@ -57,6 +63,63 @@ class PostgresLedger:
                 first_observed_at=row[2],
             )
             for row in rows
+        )
+
+    def correct_candidate(
+        self,
+        raindrop_id: int,
+        new_day: SelectionDay,
+        reason: str,
+        operator: str,
+        corrected_at: datetime,
+    ) -> CorrectionRecord:
+        """Move one candidate and append history in one database transaction."""
+        try:
+            with self.connection_factory() as connection:
+                row = connection.execute(
+                    "SELECT selection_day, recording_method FROM selection_ledger "
+                    "WHERE raindrop_id = %s FOR UPDATE",
+                    (raindrop_id,),
+                ).fetchone()
+                if row is None:
+                    raise CandidateNotFound(f"Raindrop {raindrop_id} is not recorded")
+                former_day = SelectionDay(row[0])
+                former_method = RecordingMethod(str(row[1]))
+                if former_day == new_day:
+                    raise CorrectionUnchanged(
+                        f"Raindrop {raindrop_id} is already assigned to {new_day.value}"
+                    )
+                connection.execute(
+                    "UPDATE selection_ledger SET selection_day = %s, "
+                    "recording_method = 'manual' WHERE raindrop_id = %s",
+                    (new_day.value, raindrop_id),
+                )
+                connection.execute(
+                    "INSERT INTO selection_corrections "
+                    "(raindrop_id, former_selection_day, new_selection_day, "
+                    "former_recording_method, new_recording_method, reason, "
+                    "operator, corrected_at) VALUES (%s, %s, %s, %s, "
+                    "'manual', %s, %s, %s)",
+                    (
+                        raindrop_id,
+                        former_day.value,
+                        new_day.value,
+                        former_method.value,
+                        reason,
+                        operator,
+                        corrected_at,
+                    ),
+                )
+        except (psycopg.Error, PoolTimeout) as exc:
+            raise LedgerDependencyError("Could not correct Selection Day") from exc
+        return CorrectionRecord(
+            raindrop_id,
+            former_day,
+            new_day,
+            former_method,
+            reason,
+            operator,
+            corrected_at,
         )
 
     def start_reconciliation(self, started_at: datetime) -> int:

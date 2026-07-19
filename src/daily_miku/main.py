@@ -38,21 +38,61 @@ def main() -> None:
     elif command == "send-email":
         cli.send_email()
     elif command == "ledger":
-        if len(sys.argv) < 3 or sys.argv[2] != "reconcile":
-            print("Usage: daily-miku ledger reconcile [--json]", file=sys.stderr)
+        if len(sys.argv) < 3:
+            print("Usage: daily-miku ledger <command> [args]", file=sys.stderr)
             sys.exit(2)
+        ledger_command = sys.argv[2]
         options = sys.argv[3:]
-        if any(option != "--json" for option in options) or options.count("--json") > 1:
+        if ledger_command == "reconcile":
+            if (
+                any(option != "--json" for option in options)
+                or options.count("--json") > 1
+            ):
+                if "--json" in options:
+                    print(
+                        '{"status":"failed","error":{"code":"invocation_invalid",'
+                        '"message":"Usage: daily-miku ledger reconcile [--json]",'
+                        '"details":{}}}'
+                    )
+                else:
+                    print(
+                        "Usage: daily-miku ledger reconcile [--json]", file=sys.stderr
+                    )
+                sys.exit(2)
+            sys.exit(cli.run_ledger_reconcile(json_output="--json" in options))
+        if ledger_command == "correct":
+            json_output = "--json" in options
+            values = [option for option in options if option != "--json"]
+            valid = (
+                options.count("--json") <= 1
+                and len(values) == 4
+                and values[2] == "--reason"
+            )
+            if valid:
+                sys.exit(
+                    cli.run_ledger_correct(
+                        values[0],
+                        values[1],
+                        values[3],
+                        json_output=json_output,
+                    )
+                )
             if "--json" in options:
                 print(
                     '{"status":"failed","error":{"code":"invocation_invalid",'
-                    '"message":"Usage: daily-miku ledger reconcile [--json]",'
+                    '"message":"Usage: daily-miku ledger correct RAINDROP_ID DATE '
+                    '--reason TEXT [--json]",'
                     '"details":{}}}'
                 )
             else:
-                print("Usage: daily-miku ledger reconcile [--json]", file=sys.stderr)
+                print(
+                    "Usage: daily-miku ledger correct RAINDROP_ID DATE "
+                    "--reason TEXT [--json]",
+                    file=sys.stderr,
+                )
             sys.exit(2)
-        sys.exit(cli.run_ledger_reconcile(json_output="--json" in options))
+        print(f"Unknown ledger command: {ledger_command}", file=sys.stderr)
+        sys.exit(2)
     elif command == "serve":
         # Start development server
         import uvicorn
