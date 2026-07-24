@@ -11,6 +11,7 @@ from . import email as email_module
 from .catalog import CatalogSlot, SlotCatalog, slot_document
 from .config import (
     ConfigurationError,
+    ImageSettings,
     InitializationSettings,
     LedgerSettings,
     Settings,
@@ -19,6 +20,10 @@ from .content_source import ContentDependencyError, RaindropContentSource
 from .correction import SelectionCorrector
 from .domain import Calendar, FutureSelectionDay, SystemClock
 from .initialize import InitializationDependencyError, LedgerInitializer
+from .images import ImageBlocked, ImageDependencyError, ImagePipeline
+from .images.blob import VercelBlobStore
+from .images.publisher import RaindropCoverPublisher
+from .images.store import PostgresImageRepository
 from .ledger.postgres import PostgresLedger
 from .ledger.port import (
     CandidateNotFound,
@@ -406,6 +411,183 @@ def run_ledger_reconcile(*, json_output: bool = False) -> int:
         return 3
     return reconcile_ledger(
         build_services(settings).reconciler, json_output=json_output
+    )
+
+
+def ingest_image(
+    pipeline: ImagePipeline,
+    raindrop_id: int,
+    data: bytes,
+    authorization_note: str,
+    *,
+    json_output: bool = False,
+) -> int:
+    """Ingest authorized bytes and render only safe provenance facts."""
+    try:
+        record = pipeline.ingest(raindrop_id, data, authorization_note)
+    except (ValueError, ImageBlocked) as exc:
+        code = (
+            "image_rejected" if isinstance(exc, ImageBlocked) else "invocation_invalid"
+        )
+        exit_code = 5 if isinstance(exc, ImageBlocked) else 2
+        if json_output:
+            print(json.dumps(_error_document(code, str(exc))))
+        else:
+            print(str(exc), file=sys.stderr)
+        return exit_code
+    except ImageDependencyError:
+        message = "Image ingestion could not access a required dependency."
+        if json_output:
+            print(json.dumps(_error_document("image_dependency_failed", message)))
+        else:
+            print(message, file=sys.stderr)
+        return 4
+    document = {
+        "status": "ingested",
+        "raindrop_id": record.raindrop_id,
+        "digest": record.digest,
+        "blob_key": record.blob_key,
+        "content_type": record.content_type,
+        "width": record.width,
+        "height": record.height,
+    }
+    if json_output:
+        print(json.dumps(document))
+    else:
+        print(
+            f"Ingested controlled image for Raindrop {record.raindrop_id} "
+            f"as {record.blob_key}."
+        )
+    return 0
+
+
+def withdraw_image(
+    pipeline: ImagePipeline,
+    raindrop_id: int,
+    reason: str,
+    *,
+    json_output: bool = False,
+) -> int:
+    """Record a durable withdrawal tombstone and render safe facts."""
+    try:
+        record = pipeline.withdraw(raindrop_id, reason)
+    except ValueError as exc:
+        if json_output:
+            print(json.dumps(_error_document("invocation_invalid", str(exc))))
+        else:
+            print(str(exc), file=sys.stderr)
+        return 2
+    except ImageDependencyError:
+        message = "Image withdrawal could not access durable storage."
+        if json_output:
+            print(json.dumps(_error_document("image_dependency_failed", message)))
+        else:
+            print(message, file=sys.stderr)
+        return 4
+    document = {
+        "status": "withdrawn",
+        "raindrop_id": record.raindrop_id,
+        "reason": record.reason,
+        "operator": record.operator,
+        "withdrawn_at": _utc_timestamp(record.withdrawn_at),
+    }
+    if json_output:
+        print(json.dumps(document))
+    else:
+        print(f"Withdrew controlled image for Raindrop {record.raindrop_id}.")
+    return 0
+
+
+def _configured_image_pipeline(settings: ImageSettings) -> ImagePipeline:
+    """Compose only the dependencies required by image operator commands."""
+    clock = SystemClock()
+    calendar = Calendar.named(settings.timezone_name)
+    ledger = PostgresLedger.from_url(
+        settings.database_url.get_secret_value(), local_pool=not settings.serverless
+    )
+    source = RaindropContentSource(
+        settings.raindrop_token.get_secret_value(), settings.tag
+    )
+    return ImagePipeline(
+        SlotCatalog(ledger, calendar, clock, source),
+        PostgresImageRepository.from_url(
+            settings.database_url.get_secret_value(), local_pool=not settings.serverless
+        ),
+        VercelBlobStore(settings.blob_read_write_token.get_secret_value()),
+        RaindropCoverPublisher(settings.raindrop_token.get_secret_value()),
+        clock,
+        settings.operator,
+    )
+
+
+def run_image_ingest(
+    raindrop_id_value: str,
+    file_value: str,
+    authorization_note: str,
+    *,
+    json_output: bool = False,
+) -> int:
+    """Validate invocation/configuration and ingest one local raster file."""
+    try:
+        raindrop_id = int(raindrop_id_value)
+        if raindrop_id <= 0 or not authorization_note.strip():
+            raise ValueError
+        data = Path(file_value).read_bytes()
+    except (ValueError, OSError):
+        message = (
+            "RAINDROP_ID must be positive, FILE must be readable, and "
+            "--authorization-note must not be blank."
+        )
+        if json_output:
+            print(json.dumps(_error_document("invocation_invalid", message)))
+        else:
+            print(message, file=sys.stderr)
+        return 2
+    try:
+        settings = ImageSettings.from_environment()
+    except ConfigurationError as exc:
+        if json_output:
+            print(json.dumps(_error_document("configuration_invalid", str(exc))))
+        else:
+            print(str(exc), file=sys.stderr)
+        return 3
+    return ingest_image(
+        _configured_image_pipeline(settings),
+        raindrop_id,
+        data,
+        authorization_note,
+        json_output=json_output,
+    )
+
+
+def run_image_withdraw(
+    raindrop_id_value: str, reason: str, *, json_output: bool = False
+) -> int:
+    """Validate invocation/configuration and withdraw one controlled image."""
+    try:
+        raindrop_id = int(raindrop_id_value)
+        if raindrop_id <= 0 or not reason.strip():
+            raise ValueError
+    except ValueError:
+        message = "RAINDROP_ID must be positive and --reason must not be blank."
+        if json_output:
+            print(json.dumps(_error_document("invocation_invalid", message)))
+        else:
+            print(message, file=sys.stderr)
+        return 2
+    try:
+        settings = ImageSettings.from_environment()
+    except ConfigurationError as exc:
+        if json_output:
+            print(json.dumps(_error_document("configuration_invalid", str(exc))))
+        else:
+            print(str(exc), file=sys.stderr)
+        return 3
+    return withdraw_image(
+        _configured_image_pipeline(settings),
+        raindrop_id,
+        reason,
+        json_output=json_output,
     )
 
 

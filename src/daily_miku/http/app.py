@@ -9,7 +9,7 @@ from hashlib import sha256
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ..catalog import CatalogSlot, InvalidSlotRange, SlotNotFound, slot_document
@@ -23,6 +23,7 @@ from ..logging_config import (
     setup_logging,
 )
 from ..ledger.port import LedgerDependencyError, RunStatus
+from ..images import ImageResolutionKind
 from ..reconcile import ReconciliationDependencyError
 from ..services import Services, build_services
 
@@ -245,6 +246,89 @@ def create_app(
             request,
             lambda: resolved_services.catalog.get_slot(day),
             "public, max-age=30, s-maxage=60",
+        )
+
+    @app.get("/image/{date_value}")
+    def get_dated_image(request: Request, date_value: str) -> Response:
+        """Resolve a mutable date to validated immutable controlled content."""
+        try:
+            day = parse_date(date_value)
+            resolution = resolved_services.images.resolve_image(day)
+        except SlotRequestError as exc:
+            return error_response(
+                request,
+                exc.status_code,
+                exc.code,
+                message=exc.message,
+                headers={"Cache-Control": "no-store"},
+            )
+        except FutureSelectionDay as exc:
+            return error_response(
+                request,
+                422,
+                "future_selection_day",
+                message=str(exc),
+                headers={"Cache-Control": "no-store"},
+            )
+        except LedgerDependencyError:
+            return error_response(
+                request,
+                503,
+                "image_unavailable",
+                message="Image resolution is temporarily unavailable.",
+                headers={"Cache-Control": "no-store"},
+            )
+
+        mutable_cache = "public, max-age=60, s-maxage=300"
+        if resolution.kind is ImageResolutionKind.REDIRECT:
+            response = RedirectResponse(resolution.location or "", status_code=307)
+            response.headers["Cache-Control"] = mutable_cache
+            response.headers["ETag"] = f'"sha256-{resolution.digest}"'
+            return response
+        status, code, message, cache = {
+            ImageResolutionKind.NO_IMAGE: (
+                404,
+                "image_not_found",
+                "No controlled image is available for this Daily Slot.",
+                "public, max-age=15, s-maxage=30",
+            ),
+            ImageResolutionKind.CONFLICT: (
+                409,
+                "slot_conflict",
+                "Multiple Daily Mikus occupy this slot.",
+                mutable_cache,
+            ),
+            ImageResolutionKind.WITHDRAWN: (
+                410,
+                "image_withdrawn",
+                "The image has been intentionally withdrawn.",
+                mutable_cache,
+            ),
+            ImageResolutionKind.UPSTREAM: (
+                502,
+                "image_upstream_failed",
+                "The image could not be validated from its upstream source.",
+                "no-store",
+            ),
+            ImageResolutionKind.UNAVAILABLE: (
+                503,
+                "image_unavailable",
+                "Image resolution is temporarily unavailable.",
+                "no-store",
+            ),
+            ImageResolutionKind.TIMEOUT: (
+                504,
+                "image_timeout",
+                "Image resolution timed out.",
+                "no-store",
+            ),
+        }[resolution.kind]
+        return error_response(
+            request,
+            status,
+            code,
+            message=message,
+            headers={"Cache-Control": cache},
         )
 
     @app.post("/internal/reconcile")

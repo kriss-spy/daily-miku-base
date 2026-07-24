@@ -5,18 +5,20 @@ description = "Multi-functional server/website for daily Miku images from raindr
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [
-    "fastapi==0.104.1",
+    "fastapi==0.115.14",
     "email-validator==2.2.0",
     "jinja2==3.1.2",
     "python-dotenv==1.0.0",
     "requests==2.31.0",
     "uvicorn==0.24.0",
     "mangum==0.17.0",
-    "pydantic==2.5.3",
+    "pydantic==2.12.5",
     "pydantic-settings==2.1.0",
     "psycopg[binary,pool]==3.2.9",
     "namecheap-python>=0.2.3",
-    "httpx>=0.24.0,<0.27.0",
+    "httpx==0.27.2",
+    "pillow>=10.4.0,<12.0.0",
+    "vercel==0.5.9",
 ]
 
 [project.scripts]
@@ -27,7 +29,7 @@ dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",
     "requests-mock>=1.11.0",
-    "httpx>=0.24.0,<0.27.0",  # for FastAPI TestClient - 0.27+ incompatible with starlette
+    "httpx==0.27.2",  # compatible with Starlette TestClient and the Vercel SDK
     "respx>=0.20.0",  # for mocking httpx requests
     "ruff>=0.6.0",
 ]

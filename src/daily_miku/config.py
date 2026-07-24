@@ -100,6 +100,31 @@ class InitializationSettings(DatabaseSettings):
         return value
 
 
+class ImageSettings(DatabaseSettings):
+    """Validate only dependencies required by image operator commands."""
+
+    operator: str = Field(alias="DAILY_MIKU_OPERATOR")
+    raindrop_token: SecretStr = Field(alias="RAINDROP_TOKEN")
+    blob_read_write_token: SecretStr = Field(alias="BLOB_READ_WRITE_TOKEN")
+    tag: str = Field("daily-miku", alias="DAILY_MIKU_TAG")
+
+    @field_validator("operator", "tag")
+    @classmethod
+    def validate_image_operator(cls, value: str) -> str:
+        """Require an audit identity for image mutations."""
+        if not value.strip():
+            raise ValueError("must not be empty")
+        return value.strip()
+
+    @field_validator("raindrop_token", "blob_read_write_token")
+    @classmethod
+    def validate_image_secret(cls, value: SecretStr) -> SecretStr:
+        """Reject empty image dependency credentials."""
+        if not value.get_secret_value().strip():
+            raise ValueError("must not be empty")
+        return value
+
+
 class Settings(LedgerSettings):
     """Own all v2 application environment parsing and validation."""
 

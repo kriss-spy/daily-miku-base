@@ -45,6 +45,7 @@ class SlotItem:
     tags: tuple[str, ...]
     recording_method: RecordingMethod
     first_observed_at: datetime
+    cover_identity: str | None = None
 
 
 @dataclass(frozen=True)
@@ -87,8 +88,15 @@ class SlotCatalog:
 
     def get_slot(self, day: date) -> CatalogSlot:
         """Resolve a non-future calendar date to its complete Daily Slot."""
+        selection_day, candidates = self.resolve_candidates(day)
+        return self._slot(selection_day, candidates)
+
+    def resolve_candidates(
+        self, day: date
+    ) -> tuple[SelectionDay, tuple[SlotCandidate, ...]]:
+        """Resolve ledger-only Slot identity before optional content enrichment."""
         selection_day = self.calendar.require_not_future(day, self.clock)
-        return self._slot(selection_day, self.ledger.candidates_for(selection_day))
+        return selection_day, self.ledger.candidates_for(selection_day)
 
     def today(self) -> CatalogSlot:
         """Resolve today's Slot in the configured calendar timezone."""
@@ -181,6 +189,7 @@ class SlotCatalog:
             tags=content.tags,
             recording_method=candidate.recording_method,
             first_observed_at=candidate.first_observed_at,
+            cover_identity=content.cover_identity,
         )
 
 

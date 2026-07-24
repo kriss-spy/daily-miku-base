@@ -94,16 +94,19 @@ class TestMigrationRunner:
         first = runner.apply()
         second = runner.apply()
 
-        assert first.applied_versions == (1, 2)
+        assert first.applied_versions == (1, 2, 3)
         assert second.applied_versions == ()
-        assert second.current_version == runner.expected_version == 2
+        assert second.current_version == runner.expected_version == 3
         assert database.tables == {
             "schema_migrations",
             "selection_ledger",
             "selection_corrections",
             "reconciliation_runs",
+            "image_provenance",
+            "active_images",
+            "image_withdrawals",
         }
-        assert runner.current_version() == 2
+        assert runner.current_version() == 3
 
     def test_failure_rolls_back_the_complete_apply(self) -> None:
         database = MigrationDatabase()
@@ -129,3 +132,16 @@ def test_reconciliation_state_migration_constrains_terminal_shapes() -> None:
     assert "status = 'complete'" in sql
     assert "status IN ('incomplete', 'failed')" in sql
     assert "error_code IS NOT NULL" in sql
+
+
+def test_image_migration_separates_retry_identity_from_content_digest() -> None:
+    """Keep command retries idempotent while retaining append-only provenance."""
+    sql = (
+        files("daily_miku.ledger.migrations")
+        .joinpath("0003_controlled_images.sql")
+        .read_text(encoding="utf-8")
+    )
+
+    assert "ingest_id UUID NOT NULL UNIQUE" in sql
+    assert "CREATE INDEX image_provenance_identity_digest_idx" in sql
+    assert "CREATE UNIQUE INDEX image_provenance_identity_digest_idx" not in sql

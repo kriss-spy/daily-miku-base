@@ -11,6 +11,7 @@ def main() -> None:
         print("Usage: daily-miku <command> [args]")
         print("\nCommands:")
         print("  slot today|get DATE  Read a Daily Slot")
+        print("  image ingest|withdraw  Manage controlled images")
         print("  fetch-today          Fetch today's daily miku")
         print("  fetch-date <date>    Fetch daily miku for specific date (YYYY-MM-DD)")
         print("  test-connection      Test Raindrop.io API connection")
@@ -40,6 +41,52 @@ def main() -> None:
             sys.exit(2)
         date_value = values[1] if values[0] == "get" else None
         sys.exit(cli.run_slot_read(date_value, json_output=json_output))
+    elif command == "image":
+        options = sys.argv[3:]
+        image_command = sys.argv[2] if len(sys.argv) > 2 else ""
+        json_output = "--json" in options
+        values = [option for option in options if option != "--json"]
+        if image_command == "ingest":
+            valid = (
+                options.count("--json") <= 1
+                and len(values) == 4
+                and values[2] == "--authorization-note"
+            )
+            if valid:
+                sys.exit(
+                    cli.run_image_ingest(
+                        values[0], values[1], values[3], json_output=json_output
+                    )
+                )
+            usage = (
+                "Usage: daily-miku image ingest RAINDROP_ID FILE "
+                "--authorization-note TEXT [--json]"
+            )
+        elif image_command == "withdraw":
+            valid = (
+                options.count("--json") <= 1
+                and len(values) == 3
+                and values[1] == "--reason"
+            )
+            if valid:
+                sys.exit(
+                    cli.run_image_withdraw(
+                        values[0], values[2], json_output=json_output
+                    )
+                )
+            usage = (
+                "Usage: daily-miku image withdraw RAINDROP_ID --reason TEXT [--json]"
+            )
+        else:
+            usage = "Usage: daily-miku image ingest|withdraw [args]"
+        if json_output:
+            print(
+                '{"status":"failed","error":{"code":"invocation_invalid",'
+                f'"message":"{usage}","details":{{}}}}'
+            )
+        else:
+            print(usage, file=sys.stderr)
+        sys.exit(2)
     elif command == "fetch-today":
         cli.fetch_today()
     elif command == "fetch-date":
