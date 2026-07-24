@@ -373,6 +373,8 @@ def test_search_groups_complete_conflict_and_paginates_opaque_results() -> None:
     assert first.json()["next_cursor"]
     assert first.json()["links"]["next"]
     assert first.headers["ETag"]
+    encoded = client.get("/api/search", params={"q": "Three & Nine"})
+    assert "q=Three+%26+Nine" in encoded.json()["links"]["self"]
 
 
 def test_search_html_is_complete_for_results_and_empty_state() -> None:
@@ -418,6 +420,7 @@ def test_statistics_support_explicit_and_unbounded_default_intervals() -> None:
     [
         "/api/search?q=",
         "/api/search?q=Three&cursor=bad",
+        "/api/search?q=Three&cursor=%25%25%25%25",
         "/api/search?q=Three&limit=101",
         "/api/statistics?from=2026-07-17",
         "/api/statistics?from=bad&to=2026-07-19",

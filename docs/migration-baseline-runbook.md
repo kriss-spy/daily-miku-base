@@ -14,7 +14,8 @@ production migration.
    state that `/image/{date}` changes from a redirect to `409`.
 6. Classify every selected identity as `validated_controlled_mirror`,
    `intentional_no_image`, `confirmed_withdrawal`, or `accepted_failure`. Record the
-   operator, evidence, and review time outside the public artifact.
+   operator, evidence, and review time in the protected manifest. Include the dated
+   export's `baseline_date`; an undated artifact remains unresolved.
 7. Build the canonical manifest with `build_baseline`. Do not proceed while
    `review_complete` is false or `unresolved` is non-empty. Write it once with
    `write_immutable`; review the adjacent SHA-256 file.

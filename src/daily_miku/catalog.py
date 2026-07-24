@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import secrets
 import base64
+import binascii
 import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -402,5 +403,6 @@ def _decode_cursor(cursor: str | None, scope: str) -> int:
         TypeError,
         UnicodeDecodeError,
         json.JSONDecodeError,
+        binascii.Error,
     ) as exc:
         raise InvalidCursor("cursor is malformed") from exc

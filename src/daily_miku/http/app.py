@@ -7,6 +7,7 @@ from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -378,11 +379,12 @@ def create_app(
         except ContentDependencyError as exc:
             return content_error_response(request, exc)
         today = resolved_services.calendar.today(resolved_services.clock)
-        self_link = f"/api/search?q={query}&limit={limit}"
+        parameters = {"q": query, "limit": str(limit)}
         if cursor:
-            self_link += f"&cursor={cursor}"
+            parameters["cursor"] = cursor
+        self_link = f"/api/search?{urlencode(parameters)}"
         next_link = (
-            f"/api/search?q={query}&limit={limit}&cursor={page.next_cursor}"
+            f"/api/search?{urlencode({'q': query, 'limit': str(limit), 'cursor': page.next_cursor})}"
             if page.next_cursor
             else None
         )

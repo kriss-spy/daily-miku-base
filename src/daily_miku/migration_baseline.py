@@ -58,11 +58,15 @@ def build_baseline(
     duplicate_decisions = _mapping(evidence.get("duplicates"))
     routes = _mapping(evidence.get("v1_routes"))
     unresolved: list[str] = []
+    baseline_date = evidence.get("baseline_date")
+    if not isinstance(baseline_date, str) or not baseline_date:
+        unresolved.append("baseline_date")
     exported = []
     for item in sorted(items, key=lambda value: value.raindrop_id):
         row = rows.get(item.raindrop_id)
-        classification = images.get(str(item.raindrop_id))
-        if classification not in IMAGE_CLASSIFICATIONS:
+        image_decision = _reviewed_decision(images.get(str(item.raindrop_id)))
+        classification = image_decision.get("classification")
+        if classification not in IMAGE_CLASSIFICATIONS or not image_decision:
             unresolved.append(f"image:{item.raindrop_id}")
         exported.append(
             {
@@ -77,16 +81,16 @@ def build_baseline(
                 "source_url": item.source_url,
                 "cover_identity": item.cover_identity,
                 "tags": list(item.tags),
-                "image_classification": classification,
+                "image_decision": image_decision or None,
             }
         )
     for conflict in initialization.conflicts:
         key = conflict.selection_day.value.isoformat()
-        if key not in conflict_decisions:
+        if not _reviewed_decision(conflict_decisions.get(key)):
             unresolved.append(f"conflict:{key}")
     for duplicate in initialization.duplicate_identities:
         key = f"{duplicate.kind}:{duplicate.identity}"
-        if key not in duplicate_decisions:
+        if not _reviewed_decision(duplicate_decisions.get(key)):
             unresolved.append(f"duplicate:{key}")
     for route, outcome in routes.items():
         if (
@@ -97,6 +101,7 @@ def build_baseline(
             unresolved.append(f"v1_route:{route}")
     document: dict[str, object] = {
         "format": "daily-miku-migration-baseline-v1",
+        "baseline_date": baseline_date,
         "timezone": evidence.get("timezone", "Asia/Shanghai"),
         "export": exported,
         "initialization": initialization.as_dict(),
@@ -121,3 +126,13 @@ def compare_retained_routes(
 
 def _mapping(value: object) -> dict[str, object]:
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _reviewed_decision(value: object) -> dict[str, object]:
+    decision = _mapping(value)
+    required = ("operator", "evidence", "reviewed_at")
+    if not all(
+        isinstance(decision.get(field), str) and decision[field] for field in required
+    ):
+        return {}
+    return decision

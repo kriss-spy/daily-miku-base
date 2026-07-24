@@ -35,8 +35,16 @@ def test_baseline_is_deterministic_complete_and_private(tmp_path) -> None:
         ),
     )
     evidence = {
+        "baseline_date": "2026-07-24",
         "timezone": "Asia/Shanghai",
-        "images": {"7": "validated_controlled_mirror"},
+        "images": {
+            "7": {
+                "classification": "validated_controlled_mirror",
+                "operator": "reviewer",
+                "evidence": "controlled image verification report",
+                "reviewed_at": "2026-07-24T12:00:00Z",
+            }
+        },
         "v1_routes": {"2026-07-18": {"selected_id": 7, "status": 307}},
     }
 
