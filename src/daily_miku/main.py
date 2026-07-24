@@ -48,17 +48,19 @@ def main() -> None:
         json_output = "--json" in options
         force = "--force" in options
         date_values = []
-        valid = all(option in {"--json", "--force", "--date"} for option in options)
+        valid = True
         if "--date" in options:
             index = options.index("--date")
             valid = valid and index + 1 < len(options)
             if valid:
                 date_values = [options[index + 1]]
-                valid = all(
-                    option in {"--json", "--force", "--date", date_values[0]}
-                    for option in options
-                )
-        if options.count("--json") > 1 or options.count("--force") > 1:
+        allowed = {"--json", "--force", "--date", *date_values}
+        valid = valid and all(option in allowed for option in options)
+        if (
+            options.count("--json") > 1
+            or options.count("--force") > 1
+            or options.count("--date") > 1
+        ):
             valid = False
         requested_date = None
         if valid and date_values:

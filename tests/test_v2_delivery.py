@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from email.message import EmailMessage
 from io import BytesIO
+from unittest.mock import patch
 
 import pytest
 from PIL import Image
@@ -18,6 +19,7 @@ from daily_miku.delivery import (
 )
 from daily_miku.domain import FixedClock
 from daily_miku.ledger.memory import InMemoryLedger
+from daily_miku.main import main
 from daily_miku.services import build_services
 
 pytestmark = pytest.mark.unit
@@ -125,3 +127,26 @@ def test_empty_slot_sends_nothing() -> None:
         services.email_delivery.send(date(2026, 7, 18))
 
     assert mailer.messages == []
+
+
+def test_main_dispatches_dated_forced_json_email() -> None:
+    with (
+        patch(
+            "sys.argv",
+            [
+                "daily-miku",
+                "email",
+                "send",
+                "--date",
+                "2026-07-19",
+                "--force",
+                "--json",
+            ],
+        ),
+        patch("daily_miku.cli.run_email_send", return_value=0) as run,
+        pytest.raises(SystemExit) as exit_info,
+    ):
+        main()
+
+    assert exit_info.value.code == 0
+    run.assert_called_once_with(date(2026, 7, 19), force=True, json_output=True)
