@@ -83,6 +83,12 @@ def main() -> None:
         sys.exit(
             cli.run_email_send(requested_date, force=force, json_output=json_output)
         )
+    elif command == "doctor":
+        options = sys.argv[2:]
+        if any(option != "--json" for option in options) or options.count("--json") > 1:
+            print("Usage: daily-miku doctor [--json]", file=sys.stderr)
+            sys.exit(2)
+        sys.exit(cli.run_doctor(json_output="--json" in options))
     elif command == "image":
         options = sys.argv[3:]
         image_command = sys.argv[2] if len(sys.argv) > 2 else ""

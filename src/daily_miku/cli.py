@@ -20,12 +20,15 @@ from .content_source import ContentDependencyError, RaindropContentSource
 from .correction import SelectionCorrector
 from .domain import Calendar, FutureSelectionDay, SystemClock
 from .delivery import DeliveryBlocked, DeliveryDependencyError
+from .doctor import build_doctor
 from .initialize import InitializationDependencyError, LedgerInitializer
 from .images import ImageBlocked, ImageDependencyError, ImagePipeline
 from .images.blob import VercelBlobStore
 from .images.publisher import RaindropCoverPublisher
 from .images.store import PostgresImageRepository
 from .ledger.postgres import PostgresLedger
+from .ledger.database import postgres_connections
+from .ledger.migrations import MigrationRunner
 from .ledger.port import (
     CandidateNotFound,
     CorrectionRecord,
@@ -106,6 +109,44 @@ def run_email_send(
         counts = report.as_dict()["recipients"]
         print(f"Email delivery {report.status} for {report.day.isoformat()}: {counts}")
     return 4 if report.failed else 0
+
+
+def run_doctor(*, json_output: bool = False) -> int:
+    """Diagnose configuration and all independent deployment dependencies."""
+    try:
+        settings = Settings.from_environment()
+    except ConfigurationError as exc:
+        document = {
+            "status": "failed",
+            "checks": [
+                {"name": "configuration", "status": "failed", "message": str(exc)},
+                *[
+                    {
+                        "name": name,
+                        "status": "skipped",
+                        "message": "Valid configuration is required.",
+                    }
+                    for name in ("database", "raindrop", "blob", "smtp")
+                ],
+            ],
+        }
+        print(json.dumps(document) if json_output else f"configuration: failed - {exc}")
+        return 3
+    services = build_services(settings)
+    migrations = MigrationRunner(
+        postgres_connections(
+            settings.database_url.get_secret_value(), local_pool=not settings.serverless
+        )
+    )
+    report = build_doctor(
+        settings, migrations, services.content_source, services.blob_store
+    ).run()
+    if json_output:
+        print(json.dumps(report.as_dict()))
+    else:
+        for check in report.checks:
+            print(f"{check.name}: {check.status} - {check.message}")
+    return 0 if report.status == "ok" else 4
 
 
 def read_slot(
