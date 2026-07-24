@@ -7,6 +7,14 @@ from .config import Settings
 from .content_source import ContentSource, RaindropContentSource
 from .correction import SelectionCorrector
 from .domain import Calendar, Clock, SystemClock
+from .delivery import (
+    DeliveryStore,
+    EmailDelivery,
+    InMemoryDeliveryStore,
+    Mailer,
+    PostgresDeliveryStore,
+    SMTPMailer,
+)
 from .initialize import LedgerInitializer
 from .images.blob import BlobStore, InMemoryBlobStore, VercelBlobStore
 from .images.pipeline import ImagePipeline
@@ -43,6 +51,9 @@ class Services:
     blob_store: BlobStore
     cover_publisher: CoverPublisher
     images: ImagePipeline
+    delivery_store: DeliveryStore
+    mailer: Mailer
+    email_delivery: EmailDelivery
 
 
 def build_services(
@@ -53,6 +64,8 @@ def build_services(
     image_repository: ImageRepository | None = None,
     blob_store: BlobStore | None = None,
     cover_publisher: CoverPublisher | None = None,
+    delivery_store: DeliveryStore | None = None,
+    mailer: Mailer | None = None,
 ) -> Services:
     """Build the v2 service graph, with optional adapters for isolated tests."""
     resolved_clock = clock or SystemClock()
@@ -87,6 +100,30 @@ def build_services(
         resolved_clock,
         content_source=resolved_content_source,
     )
+    images = ImagePipeline(
+        catalog,
+        resolved_image_repository,
+        resolved_blob_store,
+        resolved_cover_publisher,
+        resolved_clock,
+        settings.operator,
+    )
+    reconciler = Reconciler(
+        resolved_ledger, resolved_content_source, calendar, resolved_clock
+    )
+    resolved_delivery_store = delivery_store or (
+        InMemoryDeliveryStore()
+        if isinstance(resolved_ledger, InMemoryLedger)
+        else PostgresDeliveryStore.from_url(
+            settings.database_url.get_secret_value(), local_pool=not settings.serverless
+        )
+    )
+    resolved_mailer = mailer or SMTPMailer(
+        settings.smtp_host,
+        settings.smtp_port,
+        settings.smtp_username,
+        settings.smtp_password.get_secret_value(),
+    )
     return Services(
         settings=settings,
         clock=resolved_clock,
@@ -94,9 +131,7 @@ def build_services(
         ledger=resolved_ledger,
         content_source=resolved_content_source,
         catalog=catalog,
-        reconciler=Reconciler(
-            resolved_ledger, resolved_content_source, calendar, resolved_clock
-        ),
+        reconciler=reconciler,
         corrector=SelectionCorrector(
             resolved_ledger, calendar, resolved_clock, settings.operator
         ),
@@ -106,12 +141,17 @@ def build_services(
         image_repository=resolved_image_repository,
         blob_store=resolved_blob_store,
         cover_publisher=resolved_cover_publisher,
-        images=ImagePipeline(
+        images=images,
+        delivery_store=resolved_delivery_store,
+        mailer=resolved_mailer,
+        email_delivery=EmailDelivery(
+            reconciler,
             catalog,
-            resolved_image_repository,
+            images,
             resolved_blob_store,
-            resolved_cover_publisher,
-            resolved_clock,
-            settings.operator,
+            resolved_delivery_store,
+            resolved_mailer,
+            settings.email_from,
+            settings.email_recipients,
         ),
     )

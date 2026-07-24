@@ -1,6 +1,7 @@
 """Main entry point for daily-miku-base CLI and server."""
 
 import sys
+from datetime import date
 
 from . import cli
 
@@ -41,6 +42,45 @@ def main() -> None:
             sys.exit(2)
         date_value = values[1] if values[0] == "get" else None
         sys.exit(cli.run_slot_read(date_value, json_output=json_output))
+    elif command == "email":
+        email_command = sys.argv[2] if len(sys.argv) > 2 else ""
+        options = sys.argv[3:]
+        json_output = "--json" in options
+        force = "--force" in options
+        date_values = []
+        valid = all(option in {"--json", "--force", "--date"} for option in options)
+        if "--date" in options:
+            index = options.index("--date")
+            valid = valid and index + 1 < len(options)
+            if valid:
+                date_values = [options[index + 1]]
+                valid = all(
+                    option in {"--json", "--force", "--date", date_values[0]}
+                    for option in options
+                )
+        if options.count("--json") > 1 or options.count("--force") > 1:
+            valid = False
+        requested_date = None
+        if valid and date_values:
+            try:
+                requested_date = date.fromisoformat(date_values[0])
+            except ValueError:
+                valid = False
+        if not valid:
+            print(
+                "Usage: daily-miku email send [--date DATE] [--force] [--json]",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        if email_command != "send":
+            print(
+                "Usage: daily-miku email send [--date DATE] [--force] [--json]",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        sys.exit(
+            cli.run_email_send(requested_date, force=force, json_output=json_output)
+        )
     elif command == "image":
         options = sys.argv[3:]
         image_command = sys.argv[2] if len(sys.argv) > 2 else ""

@@ -19,6 +19,7 @@ from .config import (
 from .content_source import ContentDependencyError, RaindropContentSource
 from .correction import SelectionCorrector
 from .domain import Calendar, FutureSelectionDay, SystemClock
+from .delivery import DeliveryBlocked, DeliveryDependencyError
 from .initialize import InitializationDependencyError, LedgerInitializer
 from .images import ImageBlocked, ImageDependencyError, ImagePipeline
 from .images.blob import VercelBlobStore
@@ -58,6 +59,53 @@ def _correction_document(record: CorrectionRecord) -> dict[str, object]:
         "operator": record.operator,
         "corrected_at": record.corrected_at.isoformat().replace("+00:00", "Z"),
     }
+
+
+def run_email_send(
+    requested_date: date | None,
+    *,
+    force: bool = False,
+    json_output: bool = False,
+) -> int:
+    """Reconcile and deliver one image-required Daily Slot."""
+    try:
+        settings = Settings.from_environment()
+        services = build_services(settings)
+        day = requested_date or services.calendar.today(services.clock).value
+        report = services.email_delivery.send(day, force=force)
+    except ConfigurationError as exc:
+        document = _error_document("configuration_invalid", str(exc))
+        if json_output:
+            print(json.dumps(document))
+        else:
+            print(str(exc), file=sys.stderr)
+        return 3
+    except (FutureSelectionDay, DeliveryBlocked) as exc:
+        status = exc.status if isinstance(exc, DeliveryBlocked) else "failed"
+        document = _error_document(status, str(exc))
+        if json_output:
+            print(json.dumps(document))
+        else:
+            print(str(exc), file=sys.stderr)
+        return 5
+    except (
+        DeliveryDependencyError,
+        ReconciliationDependencyError,
+        LedgerDependencyError,
+        ContentDependencyError,
+    ):
+        message = "Email delivery could not access a required dependency."
+        if json_output:
+            print(json.dumps(_error_document("delivery_dependency_failed", message)))
+        else:
+            print(message, file=sys.stderr)
+        return 4
+    if json_output:
+        print(json.dumps(report.as_dict()))
+    else:
+        counts = report.as_dict()["recipients"]
+        print(f"Email delivery {report.status} for {report.day.isoformat()}: {counts}")
+    return 4 if report.failed else 0
 
 
 def read_slot(
