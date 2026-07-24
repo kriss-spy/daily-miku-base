@@ -353,6 +353,82 @@ def test_editorial_stylesheet_has_responsive_and_accessible_invariants() -> None
     assert ":focus-visible" in css.text
 
 
+def test_search_groups_complete_conflict_and_paginates_opaque_results() -> None:
+    client = slot_client()
+
+    conflict = client.get("/api/search", params={"q": "Eight"})
+    first = client.get("/api/search", params={"q": "e", "limit": 1})
+    second = client.get(
+        "/api/search",
+        params={"q": "e", "limit": 1, "cursor": first.json()["next_cursor"]},
+    )
+
+    assert conflict.status_code == 200
+    assert conflict.json()["items"][0]["state"] == "conflict"
+    assert [item["raindrop_id"] for item in conflict.json()["items"][0]["items"]] == [
+        8,
+        9,
+    ]
+    assert len(first.json()["items"]) == len(second.json()["items"]) == 1
+    assert first.json()["next_cursor"]
+    assert first.json()["links"]["next"]
+    assert first.headers["ETag"]
+
+
+def test_search_html_is_complete_for_results_and_empty_state() -> None:
+    client = slot_client()
+
+    conflict = client.get("/search", params={"q": "Eight"})
+    empty = client.get("/search", params={"q": "absent phrase"})
+
+    assert conflict.status_code == empty.status_code == 200
+    assert "Eight" in conflict.text and "Nine" in conflict.text
+    assert 'href="/2026-07-18"' in conflict.text
+    assert "No Daily Slots match this search" in empty.text
+    assert '<form action="/search" method="get"' in empty.text
+
+
+def test_statistics_support_explicit_and_unbounded_default_intervals() -> None:
+    client = slot_client()
+
+    bounded = client.get(
+        "/api/statistics", params={"from": "2026-07-17", "to": "2026-07-19"}
+    )
+    long_period = client.get(
+        "/api/statistics", params={"from": "2025-01-01", "to": "2026-07-19"}
+    )
+    default = client.get("/api/statistics")
+
+    assert bounded.json() == {
+        "from": "2026-07-17",
+        "to": "2026-07-19",
+        "calendar_days": 3,
+        "selected_slots": 1,
+        "empty_slots": 1,
+        "conflict_slots": 1,
+        "candidates": 3,
+    }
+    assert long_period.status_code == 200
+    assert long_period.json()["calendar_days"] > 366
+    assert default.json()["from"] == "2026-07-17"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "/api/search?q=",
+        "/api/search?q=Three&cursor=bad",
+        "/api/search?q=Three&limit=101",
+        "/api/statistics?from=2026-07-17",
+        "/api/statistics?from=bad&to=2026-07-19",
+    ],
+)
+def test_search_and_statistics_reject_malformed_requests(url: str) -> None:
+    response = slot_client().get(url)
+
+    assert response.status_code == 400
+
+
 def test_internal_reconcile_requires_bearer_authentication() -> None:
     settings = Settings.in_memory()
     source = InMemoryContentSource((TaggedItem(7),))

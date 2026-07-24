@@ -1,6 +1,10 @@
 """Read-only Daily Slot catalog and shared representation."""
 
+from __future__ import annotations
+
 import secrets
+import base64
+import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
@@ -23,6 +27,8 @@ from .domain import (
 from .ledger.port import Ledger
 
 MAX_RANGE_DAYS = 366
+DEFAULT_PAGE_LIMIT = 24
+MAX_PAGE_LIMIT = 100
 
 
 class InvalidSlotRange(ValueError):
@@ -31,6 +37,42 @@ class InvalidSlotRange(ValueError):
 
 class SlotNotFound(LookupError):
     """A selector has no eligible Daily Slot."""
+
+
+class InvalidCursor(ValueError):
+    """An opaque collection cursor is malformed or belongs to another query."""
+
+
+@dataclass(frozen=True)
+class SlotPage:
+    """One stable page of complete non-empty Daily Slots."""
+
+    items: tuple[CatalogSlot, ...]
+    next_cursor: str | None
+
+
+@dataclass(frozen=True)
+class SlotStatistics:
+    """Calendar and cardinality counts over one inclusive interval."""
+
+    first: date
+    last: date
+    calendar_days: int
+    selected_slots: int
+    empty_slots: int
+    conflict_slots: int
+    candidates: int
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "from": self.first.isoformat(),
+            "to": self.last.isoformat(),
+            "calendar_days": self.calendar_days,
+            "selected_slots": self.selected_slots,
+            "empty_slots": self.empty_slots,
+            "conflict_slots": self.conflict_slots,
+            "candidates": self.candidates,
+        }
 
 
 @dataclass(frozen=True)
@@ -140,6 +182,77 @@ class SlotCatalog:
         )
         return tuple(self._slot(day, grouped.get(day, ())) for day in days)
 
+    def search(
+        self, query: str, *, cursor: str | None = None, limit: int = DEFAULT_PAGE_LIMIT
+    ) -> SlotPage:
+        """Search ledger-restricted current content and retain complete Slots."""
+        normalized = query.strip().casefold()
+        if not normalized:
+            raise ValueError("query must not be blank")
+        _validate_limit(limit)
+        today = self.calendar.today(self.clock)
+        rows = self.ledger.candidates_between(SelectionDay(date.min), today)
+        grouped = self._group(rows)
+        if not rows:
+            return SlotPage((), None)
+        content = self.content_source.get_items(
+            tuple(candidate.raindrop_id for _, candidate in rows)
+        )
+        by_id = {item.raindrop_id: item for item in content}
+        if set(by_id) != {candidate.raindrop_id for _, candidate in rows}:
+            raise ContentDependencyError(
+                "Raindrop returned incomplete current content.", ContentFailure.UPSTREAM
+            )
+        ranked: list[tuple[int, SelectionDay]] = []
+        for day, candidates in grouped.items():
+            score = max(
+                _relevance(by_id[candidate.raindrop_id], normalized)
+                for candidate in candidates
+            )
+            if score:
+                ranked.append((score, day))
+        ranked.sort(key=lambda entry: (entry[0], entry[1]), reverse=True)
+        offset = _decode_cursor(cursor, normalized)
+        if offset > len(ranked):
+            raise InvalidCursor("cursor has expired")
+        selected = ranked[offset : offset + limit]
+        slots = tuple(self._slot(day, grouped[day]) for _, day in selected)
+        next_offset = offset + len(selected)
+        next_cursor = (
+            _encode_cursor(next_offset, normalized)
+            if next_offset < len(ranked)
+            else None
+        )
+        return SlotPage(slots, next_cursor)
+
+    def statistics(
+        self, first: date | None = None, last: date | None = None
+    ) -> SlotStatistics:
+        """Aggregate Slot cardinalities without the range representation bound."""
+        today = self.calendar.today(self.clock)
+        rows = self.ledger.candidates_between(SelectionDay(date.min), today)
+        default_first = rows[0][0].value if rows else today.value
+        first_date = first or default_first
+        last_date = last or today.value
+        first_day = self.calendar.require_not_future(first_date, self.clock)
+        last_day = self.calendar.require_not_future(last_date, self.clock)
+        if first_date > last_date:
+            raise InvalidSlotRange("from must not follow to")
+        bounded = tuple(row for row in rows if first_day <= row[0] <= last_day)
+        grouped = self._group(bounded)
+        selected = sum(len(candidates) == 1 for candidates in grouped.values())
+        conflicts = sum(len(candidates) > 1 for candidates in grouped.values())
+        calendar_days = (last_date - first_date).days + 1
+        return SlotStatistics(
+            first_date,
+            last_date,
+            calendar_days,
+            selected,
+            calendar_days - selected - conflicts,
+            conflicts,
+            len(bounded),
+        )
+
     def _slot(
         self, day: SelectionDay, candidates: tuple[SlotCandidate, ...]
     ) -> CatalogSlot:
@@ -229,3 +342,44 @@ def slot_document(slot: CatalogSlot, today: SelectionDay) -> dict[str, object]:
             ),
         },
     }
+
+
+def _validate_limit(limit: int) -> None:
+    if limit < 1 or limit > MAX_PAGE_LIMIT:
+        raise ValueError("limit must be between 1 and 100")
+
+
+def _relevance(item: TaggedItem, query: str) -> int:
+    title = item.title.casefold()
+    excerpt = (item.excerpt or "").casefold()
+    source = (item.source_url or "").casefold()
+    return title.count(query) * 4 + excerpt.count(query) * 2 + source.count(query)
+
+
+def _encode_cursor(offset: int, scope: str) -> str:
+    payload = json.dumps({"offset": offset, "scope": scope}, separators=(",", ":"))
+    return base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
+
+
+def _decode_cursor(cursor: str | None, scope: str) -> int:
+    if cursor is None:
+        return 0
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        document = json.loads(base64.urlsafe_b64decode(padded).decode())
+        offset = document["offset"]
+        if document != {"offset": offset, "scope": scope} or not isinstance(
+            offset, int
+        ):
+            raise ValueError
+        if offset < 0:
+            raise ValueError
+        return offset
+    except (
+        ValueError,
+        KeyError,
+        TypeError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+    ) as exc:
+        raise InvalidCursor("cursor is malformed") from exc

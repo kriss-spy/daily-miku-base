@@ -15,7 +15,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from ..catalog import CatalogSlot, InvalidSlotRange, SlotNotFound, slot_document
+from ..catalog import (
+    CatalogSlot,
+    InvalidCursor,
+    InvalidSlotRange,
+    SlotNotFound,
+    slot_document,
+)
 from ..config import Settings
 from ..content_source import ContentDependencyError, ContentFailure
 from ..domain import FutureSelectionDay
@@ -258,6 +264,73 @@ def create_app(
             "public, max-age=30, s-maxage=60",
         )
 
+    @app.get("/api/search")
+    def search_api(request: Request) -> JSONResponse:
+        query = request.query_params.get("q", "")
+        cursor = request.query_params.get("cursor")
+        try:
+            limit = int(request.query_params.get("limit", "24"))
+            page = resolved_services.catalog.search(query, cursor=cursor, limit=limit)
+        except (ValueError, InvalidCursor) as exc:
+            return error_response(request, 400, "search_invalid", message=str(exc))
+        except LedgerDependencyError:
+            return error_response(
+                request,
+                503,
+                "ledger_unavailable",
+                headers={"Cache-Control": "no-store"},
+            )
+        except ContentDependencyError as exc:
+            return content_error_response(request, exc)
+        today = resolved_services.calendar.today(resolved_services.clock)
+        self_link = f"/api/search?q={query}&limit={limit}"
+        if cursor:
+            self_link += f"&cursor={cursor}"
+        next_link = (
+            f"/api/search?q={query}&limit={limit}&cursor={page.next_cursor}"
+            if page.next_cursor
+            else None
+        )
+        return json_response(
+            {
+                "items": [slot_document(slot, today) for slot in page.items],
+                "next_cursor": page.next_cursor,
+                "links": {"self": self_link, "next": next_link},
+            },
+            "public, max-age=15, s-maxage=30",
+        )
+
+    @app.get("/api/statistics")
+    def statistics_api(request: Request) -> JSONResponse:
+        first_value = request.query_params.get("from")
+        last_value = request.query_params.get("to")
+        if (first_value is None) != (last_value is None):
+            return error_response(
+                request, 400, "range_invalid", message="Both from and to are required."
+            )
+        try:
+            first = parse_date(first_value, "from") if first_value else None
+            last = parse_date(last_value, "to") if last_value else None
+            statistics = resolved_services.catalog.statistics(first, last)
+        except SlotRequestError as exc:
+            return error_response(
+                request, exc.status_code, exc.code, message=exc.message
+            )
+        except InvalidSlotRange as exc:
+            return error_response(request, 400, "range_invalid", message=str(exc))
+        except FutureSelectionDay as exc:
+            return error_response(
+                request, 422, "future_selection_day", message=str(exc)
+            )
+        except LedgerDependencyError:
+            return error_response(
+                request,
+                503,
+                "ledger_unavailable",
+                headers={"Cache-Control": "no-store"},
+            )
+        return json_response(statistics.as_dict(), "public, max-age=30, s-maxage=60")
+
     @app.get("/image/{date_value}")
     def get_dated_image(request: Request, date_value: str) -> Response:
         """Resolve a mutable date to validated immutable controlled content."""
@@ -429,6 +502,28 @@ def create_app(
     @app.get("/today", include_in_schema=False)
     def today_redirect() -> RedirectResponse:
         return RedirectResponse("/", status_code=307)
+
+    @app.get("/search", response_class=HTMLResponse)
+    def search_page(request: Request) -> Response:
+        query = request.query_params.get("q", "")
+        if not query.strip():
+            return templates.TemplateResponse(
+                request, "search.html", {"query": query, "page": None}
+            )
+        try:
+            page = resolved_services.catalog.search(query)
+        except LedgerDependencyError:
+            return error_response(
+                request,
+                503,
+                "ledger_unavailable",
+                headers={"Cache-Control": "no-store"},
+            )
+        except ContentDependencyError as exc:
+            return content_error_response(request, exc)
+        return templates.TemplateResponse(
+            request, "search.html", {"query": query, "page": page}
+        )
 
     @app.get("/{date_value}", response_class=HTMLResponse)
     def dated_page(request: Request, date_value: str) -> Response:

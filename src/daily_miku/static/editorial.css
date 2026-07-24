@@ -48,6 +48,13 @@ h1 { margin: .4rem 0 1.25rem; font-size: clamp(2.25rem, 5vw, 5.8rem); line-heigh
 .day-controls a { min-height: 2.75rem; display: grid; align-content: center; }
 .day-controls a:last-child { margin-left: auto; text-align: right; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.collection-page { width: min(70rem, 100%); margin: auto; padding: clamp(2rem, 7vw, 7rem) clamp(1rem, 4vw, 4rem); }
+.search-form { max-width: 42rem; display: grid; gap: .5rem; }
+.search-form div { display: flex; gap: .5rem; }
+.search-form input { min-width: 0; flex: 1; min-height: 2.75rem; border: 1px solid var(--ink); background: transparent; padding: .7rem; font: inherit; }
+.search-form button { min-height: 2.75rem; border: 0; padding: .7rem 1.25rem; color: white; background: var(--miku); font: inherit; }
+.result-list { margin-top: 3rem; padding: 0; list-style: none; border-top: 1px solid var(--rule); }
+.result-list > li { padding: 1.5rem 0; border-bottom: 1px solid var(--rule); }
 
 @media (max-width: 48rem) {
   .site-header > span { display: none; }
