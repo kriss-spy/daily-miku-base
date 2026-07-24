@@ -280,6 +280,79 @@ def test_content_dependency_failure_classes_are_distinct(
     assert dependency.headers["Cache-Control"] == "no-store"
 
 
+def test_html_routes_render_selected_slot_and_calendar_navigation() -> None:
+    client = slot_client()
+
+    selected = client.get("/2026-07-17")
+    redirected = client.get("/today", follow_redirects=False)
+
+    assert selected.status_code == 200
+    assert selected.headers["content-type"].startswith("text/html")
+    assert '<main class="slot-page slot-page--selected"' in selected.text
+    assert 'src="/image/2026-07-17"' in selected.text
+    assert 'alt="Three"' in selected.text
+    assert "Description" in selected.text
+    assert "Raindrop ID" in selected.text and ">3<" in selected.text
+    assert "Observed during reconciliation" in selected.text
+    assert 'href="/2026-07-16"' in selected.text
+    assert 'href="/2026-07-18"' in selected.text
+    assert 'aria-current="date"' in selected.text
+    assert redirected.status_code == 307
+    assert redirected.headers["location"] == "/"
+
+
+def test_home_empty_and_dated_conflict_are_deliberate_html_states() -> None:
+    client = slot_client()
+
+    empty = client.get("/")
+    conflict = client.get("/2026-07-18")
+
+    assert empty.status_code == conflict.status_code == 200
+    assert "Nothing was selected" in empty.text
+    assert "This date remains open" in empty.text
+    assert 'class="open-frame"' in empty.text
+    assert "Selection conflict" in conflict.text
+    assert "Multiple Daily Mikus occupy this date" in conflict.text
+    assert "Eight" in conflict.text and "Nine" in conflict.text
+    assert conflict.text.count("Raindrop ID") == 2
+    assert '<ul class="candidate-list">' in conflict.text
+
+
+@pytest.mark.parametrize(
+    ("url", "status", "code"),
+    [
+        ("/2026-7-20", 400, "date_malformed"),
+        ("/2026-02-30", 400, "date_malformed"),
+        ("/2026-07-20", 422, "future_selection_day"),
+    ],
+)
+def test_html_date_validation_preserves_safe_failures(
+    url: str, status: int, code: str
+) -> None:
+    response = slot_client().get(url)
+
+    assert response.status_code == status
+    assert response.json()["error"]["code"] == code
+
+
+def test_html_dependency_failure_is_not_rendered_as_empty() -> None:
+    response = slot_client(lookup_failure=ContentFailure.UNAVAILABLE).get("/2026-07-17")
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "content_unavailable"
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+def test_editorial_stylesheet_has_responsive_and_accessible_invariants() -> None:
+    css = slot_client().get("/static/editorial.css")
+
+    assert css.status_code == 200
+    assert "overflow-x: hidden" in css.text
+    assert "@media (max-width: 48rem)" in css.text
+    assert "@media (prefers-reduced-motion: reduce)" in css.text
+    assert ":focus-visible" in css.text
+
+
 def test_internal_reconcile_requires_bearer_authentication() -> None:
     settings = Settings.in_memory()
     source = InMemoryContentSource((TaggedItem(7),))

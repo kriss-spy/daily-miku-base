@@ -4,12 +4,15 @@ import logging
 import re
 import secrets
 from collections.abc import Awaitable, Callable
-from datetime import date
+from datetime import date, timedelta
 from hashlib import sha256
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ..catalog import CatalogSlot, InvalidSlotRange, SlotNotFound, slot_document
@@ -41,6 +44,13 @@ def create_app(
     setup_logging()
     app = FastAPI(title="Daily Miku", version="2.0.0")
     app.state.services = resolved_services
+    package_root = Path(__file__).resolve().parent.parent
+    templates = Jinja2Templates(directory=package_root / "templates_v2")
+    app.mount(
+        "/static",
+        StaticFiles(directory=package_root / "static"),
+        name="static",
+    )
 
     @app.middleware("http")
     async def correlate_request(
@@ -373,6 +383,64 @@ def create_app(
                 },
             )
         return JSONResponse(report.as_dict())
+
+    def render_slot(request: Request, day: date) -> Response:
+        try:
+            slot = resolved_services.catalog.get_slot(day)
+            today = resolved_services.calendar.today(resolved_services.clock).value
+            rail_start = day - timedelta(days=min(3, day.toordinal() - 1))
+            rail_end = min(day + timedelta(days=3), today)
+            rail = resolved_services.catalog.range(rail_start, rail_end)
+        except FutureSelectionDay as exc:
+            return error_response(
+                request, 422, "future_selection_day", message=str(exc)
+            )
+        except LedgerDependencyError:
+            return error_response(
+                request,
+                503,
+                "ledger_unavailable",
+                message="The Selection Ledger is temporarily unavailable.",
+                headers={"Cache-Control": "no-store"},
+            )
+        except ContentDependencyError as exc:
+            return content_error_response(request, exc)
+
+        previous = day - timedelta(days=1) if day > date.min else None
+        next_day = day + timedelta(days=1) if day < today else None
+        return templates.TemplateResponse(
+            request,
+            "slot.html",
+            {
+                "slot": slot,
+                "rail": rail,
+                "today": today,
+                "previous": previous,
+                "next": next_day,
+            },
+            headers={"Cache-Control": "public, max-age=30, s-maxage=60"},
+        )
+
+    @app.get("/", response_class=HTMLResponse)
+    def home(request: Request) -> Response:
+        today = resolved_services.calendar.today(resolved_services.clock).value
+        return render_slot(request, today)
+
+    @app.get("/today", include_in_schema=False)
+    def today_redirect() -> RedirectResponse:
+        return RedirectResponse("/", status_code=307)
+
+    @app.get("/{date_value}", response_class=HTMLResponse)
+    def dated_page(request: Request, date_value: str) -> Response:
+        if not date_value[:1].isdigit():
+            return error_response(request, 404, "not_found")
+        try:
+            day = parse_date(date_value)
+        except SlotRequestError as exc:
+            return error_response(
+                request, exc.status_code, exc.code, message=exc.message
+            )
+        return render_slot(request, day)
 
     @app.exception_handler(StarletteHTTPException)
     def handle_http_error(
