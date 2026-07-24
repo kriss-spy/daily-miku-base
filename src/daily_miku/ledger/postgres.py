@@ -92,6 +92,43 @@ class PostgresLedger:
             for row in rows
         )
 
+    def reconciliation_runs(self) -> tuple[dict[str, object], ...]:
+        """Return recent durable runs newest-first for health reporting."""
+        try:
+            with self.connection_factory() as connection:
+                rows = connection.execute(
+                    "SELECT run_id, status, started_at, finished_at, "
+                    "discovered_count, inserted_count, error_code "
+                    "FROM reconciliation_runs ORDER BY run_id DESC LIMIT 20"
+                ).fetchall()
+        except (psycopg.Error, PoolTimeout) as exc:
+            raise LedgerDependencyError(
+                "Could not read reconciliation history"
+            ) from exc
+        return tuple(
+            {
+                "run_id": int(row[0]),
+                "status": str(row[1]),
+                "started_at": row[2],
+                "finished_at": row[3],
+                "discovered_count": int(row[4]),
+                "inserted_count": int(row[5]),
+                "error_code": row[6],
+            }
+            for row in rows
+        )
+
+    def schema_version(self) -> int:
+        """Read the latest applied migration version."""
+        try:
+            with self.connection_factory() as connection:
+                row = connection.execute(
+                    "SELECT COALESCE(MAX(version), 0) FROM schema_migrations"
+                ).fetchone()
+        except (psycopg.Error, PoolTimeout) as exc:
+            raise LedgerDependencyError("Could not read schema version") from exc
+        return int(row[0]) if row else 0
+
     def recorded_raindrop_ids(self, raindrop_ids: Sequence[int]) -> frozenset[int]:
         """Read requested identities that already exist in the ledger."""
         if not raindrop_ids:

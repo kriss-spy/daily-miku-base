@@ -4,7 +4,7 @@ import logging
 import re
 import secrets
 from collections.abc import Awaitable, Callable
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
 
@@ -32,8 +32,10 @@ from ..logging_config import (
     setup_logging,
 )
 from ..ledger.port import LedgerDependencyError, RunStatus
+from ..ledger.migrations import expected_schema_version
 from ..images import ImageResolutionKind
 from ..reconcile import ReconciliationDependencyError
+from ..reliability import RateLimiter
 from ..services import Services, build_services
 
 logger = logging.getLogger("daily_miku.v2")
@@ -50,6 +52,7 @@ def create_app(
     setup_logging()
     app = FastAPI(title="Daily Miku", version="2.0.0")
     app.state.services = resolved_services
+    app.state.rate_limiter = RateLimiter()
     package_root = Path(__file__).resolve().parent.parent
     templates = Jinja2Templates(directory=package_root / "templates_v2")
     app.mount(
@@ -73,6 +76,28 @@ def create_app(
             },
         )
         try:
+            route_class = (
+                "internal" if request.url.path.startswith("/internal/") else "public"
+            )
+            client = request.client.host if request.client else "unknown"
+            retry_after = app.state.rate_limiter.retry_after(client, route_class)
+            if retry_after is not None:
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "error": {
+                            "code": "rate_limited",
+                            "message": "Request rate limit exceeded.",
+                            "details": {},
+                            "request_id": request_id,
+                        }
+                    },
+                    headers={
+                        "Retry-After": str(retry_after),
+                        "Cache-Control": "no-store",
+                        "X-Request-ID": request_id,
+                    },
+                )
             response = await call_next(request)
             response.headers["X-Request-ID"] = request_id
             logger.info(
@@ -183,6 +208,76 @@ def create_app(
             )
         except ContentDependencyError as exc:
             return content_error_response(request, exc)
+
+    @app.get("/health")
+    def health() -> JSONResponse:
+        return json_response({"status": "ok"}, "no-store", validator=False)
+
+    @app.get("/ready")
+    def readiness(request: Request) -> JSONResponse:
+        checks: dict[str, str] = {}
+        try:
+            checks["schema"] = (
+                "ok"
+                if resolved_services.ledger.schema_version()
+                == expected_schema_version()
+                else "failed"
+            )
+        except LedgerDependencyError:
+            checks["schema"] = "failed"
+        try:
+            scan = resolved_services.content_source.scan_tagged()
+            checks["raindrop"] = "ok" if scan.status.value == "complete" else "failed"
+        except ContentDependencyError:
+            checks["raindrop"] = "failed"
+        if all(value == "ok" for value in checks.values()):
+            return json_response(
+                {"status": "ready", "checks": checks}, "no-store", validator=False
+            )
+        return error_response(
+            request,
+            503,
+            "not_ready",
+            message="Required deployment dependencies are not ready.",
+            details={"checks": checks},
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.get("/internal/reconciliation-status")
+    def reconciliation_status(request: Request) -> JSONResponse:
+        try:
+            runs = resolved_services.ledger.reconciliation_runs()
+        except LedgerDependencyError:
+            return error_response(
+                request,
+                503,
+                "ledger_unavailable",
+                headers={"Cache-Control": "no-store"},
+            )
+        latest = _run_document(runs[0]) if runs else None
+        complete_run = next(
+            (
+                run
+                for run in runs
+                if _run_value(run, "status") in ("complete", RunStatus.COMPLETE)
+            ),
+            None,
+        )
+        complete = _run_document(complete_run) if complete_run else None
+        finished = _run_value(complete_run, "finished_at") if complete_run else None
+        stale = (
+            not isinstance(finished, datetime)
+            or (resolved_services.clock.now() - finished).total_seconds() > 1800
+        )
+        return json_response(
+            {
+                "status": "stale" if stale else "fresh",
+                "latest": latest,
+                "latest_complete": complete,
+            },
+            "no-store",
+            validator=False,
+        )
 
     @app.get("/api/slots/today")
     def get_today(request: Request) -> JSONResponse:
@@ -581,3 +676,20 @@ class SlotRequestError(ValueError):
         self.status_code = status_code
         self.code = code
         self.message = message
+
+
+def _run_value(run: object, name: str) -> object:
+    if isinstance(run, dict):
+        return run.get(name)
+    return getattr(run, name)
+
+
+def _run_document(run: object) -> dict[str, object]:
+    finished = _run_value(run, "finished_at")
+    status = _run_value(run, "status")
+    return {
+        "run_id": _run_value(run, "run_id"),
+        "status": status.value if isinstance(status, RunStatus) else status,
+        "finished_at": finished.isoformat() if isinstance(finished, datetime) else None,
+        "error_code": _run_value(run, "error_code"),
+    }

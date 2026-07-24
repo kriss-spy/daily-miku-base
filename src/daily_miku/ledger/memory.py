@@ -197,6 +197,14 @@ class InMemoryLedger:
                 error_message=error_message,
             )
 
+    def reconciliation_runs(self) -> tuple[MemoryReconciliationRun, ...]:
+        """Return fake durable runs newest-first."""
+        return tuple(reversed(self.runs))
+
+    def schema_version(self) -> int:
+        """Represent an in-memory graph at the packaged schema version."""
+        return 4
+
     def _running_run(self, run_id: int) -> MemoryReconciliationRun:
         if run_id <= 0 or run_id > len(self.runs):
             raise RuntimeError(f"Unknown reconciliation run {run_id}")

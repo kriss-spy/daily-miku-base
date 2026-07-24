@@ -106,6 +106,14 @@ class ReconciliationLedger(Ledger, Protocol):
         """Record an incomplete or failed terminal outcome."""
         ...
 
+    def reconciliation_runs(self) -> tuple[object, ...]:
+        """Return durable runs newest-first for operational freshness."""
+        ...
+
+    def schema_version(self) -> int:
+        """Return the latest applied numbered migration."""
+        ...
+
 
 class InitializationLedger(Ledger, Protocol):
     """Read and transactional write surface for one-time initialization."""
