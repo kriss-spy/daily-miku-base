@@ -8,7 +8,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 from . import email as email_module
-from .catalog import CatalogSlot, SlotCatalog, slot_document
+from .catalog import CatalogSlot, InvalidCursor, SlotCatalog, slot_document
 from .config import (
     ConfigurationError,
     ImageSettings,
@@ -147,6 +147,59 @@ def run_doctor(*, json_output: bool = False) -> int:
         for check in report.checks:
             print(f"{check.name}: {check.status} - {check.message}")
     return 0 if report.status == "ok" else 4
+
+
+def run_archive_list(
+    *, cursor: str | None = None, limit: int = 24, json_output: bool = False
+) -> int:
+    """Render the shared newest-first non-empty Slot archive."""
+    try:
+        settings = Settings.from_environment()
+        services = build_services(settings)
+        page = services.catalog.archive(cursor=cursor, limit=limit)
+    except ConfigurationError as exc:
+        if json_output:
+            print(json.dumps(_error_document("configuration_invalid", str(exc))))
+        else:
+            print(str(exc), file=sys.stderr)
+        return 3
+    except (ValueError, InvalidCursor) as exc:
+        if json_output:
+            print(json.dumps(_error_document("archive_invalid", str(exc))))
+        else:
+            print(str(exc), file=sys.stderr)
+        return 2
+    except (LedgerDependencyError, ContentDependencyError):
+        message = "Archive dependencies are temporarily unavailable."
+        if json_output:
+            print(json.dumps(_error_document("archive_dependency_failed", message)))
+        else:
+            print(message, file=sys.stderr)
+        return 4
+    today = services.calendar.today(services.clock)
+    document = {
+        "items": [slot_document(slot, today) for slot in page.items],
+        "next_cursor": page.next_cursor,
+        "links": {
+            "self": f"/api/archive?limit={limit}"
+            + (f"&cursor={cursor}" if cursor else ""),
+            "next": (
+                f"/api/archive?limit={limit}&cursor={page.next_cursor}"
+                if page.next_cursor
+                else None
+            ),
+        },
+    }
+    if json_output:
+        print(json.dumps(document))
+    elif not page.items:
+        print("The Daily Slot archive is empty.")
+    else:
+        for slot in page.items:
+            print(f"{slot.day.value.isoformat()}  {slot.state.value}")
+            for item in slot.items:
+                print(f"  {item.title} (Raindrop ID {item.raindrop_id})")
+    return 0
 
 
 def read_slot(

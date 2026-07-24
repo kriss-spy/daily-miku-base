@@ -395,6 +395,41 @@ def create_app(
             "public, max-age=15, s-maxage=30",
         )
 
+    @app.get("/api/archive")
+    def archive_api(request: Request) -> JSONResponse:
+        cursor = request.query_params.get("cursor")
+        try:
+            limit = int(request.query_params.get("limit", "24"))
+            page = resolved_services.catalog.archive(cursor=cursor, limit=limit)
+        except (ValueError, InvalidCursor) as exc:
+            return error_response(request, 400, "archive_invalid", message=str(exc))
+        except LedgerDependencyError:
+            return error_response(
+                request,
+                503,
+                "ledger_unavailable",
+                headers={"Cache-Control": "no-store"},
+            )
+        except ContentDependencyError as exc:
+            return content_error_response(request, exc)
+        today = resolved_services.calendar.today(resolved_services.clock)
+        self_link = f"/api/archive?limit={limit}"
+        if cursor:
+            self_link += f"&cursor={cursor}"
+        next_link = (
+            f"/api/archive?limit={limit}&cursor={page.next_cursor}"
+            if page.next_cursor
+            else None
+        )
+        return json_response(
+            {
+                "items": [slot_document(slot, today) for slot in page.items],
+                "next_cursor": page.next_cursor,
+                "links": {"self": self_link, "next": next_link},
+            },
+            "public, max-age=30, s-maxage=60",
+        )
+
     @app.get("/api/statistics")
     def statistics_api(request: Request) -> JSONResponse:
         first_value = request.query_params.get("from")
@@ -618,6 +653,47 @@ def create_app(
             return content_error_response(request, exc)
         return templates.TemplateResponse(
             request, "search.html", {"query": query, "page": page}
+        )
+
+    @app.get("/archive", response_class=HTMLResponse)
+    def archive_page(request: Request) -> Response:
+        cursor = request.query_params.get("cursor")
+        context = None
+        try:
+            page = resolved_services.catalog.archive(cursor=cursor)
+            first_value = request.query_params.get("from")
+            last_value = request.query_params.get("to")
+            if (first_value is None) != (last_value is None):
+                raise SlotRequestError(
+                    400, "range_invalid", "Both from and to are required."
+                )
+            if first_value and last_value:
+                context = resolved_services.catalog.range(
+                    parse_date(first_value, "from"), parse_date(last_value, "to")
+                )
+        except SlotRequestError as exc:
+            return error_response(
+                request, exc.status_code, exc.code, message=exc.message
+            )
+        except InvalidSlotRange as exc:
+            return error_response(request, 400, "range_invalid", message=str(exc))
+        except FutureSelectionDay as exc:
+            return error_response(
+                request, 422, "future_selection_day", message=str(exc)
+            )
+        except InvalidCursor as exc:
+            return error_response(request, 400, "archive_invalid", message=str(exc))
+        except LedgerDependencyError:
+            return error_response(
+                request,
+                503,
+                "ledger_unavailable",
+                headers={"Cache-Control": "no-store"},
+            )
+        except ContentDependencyError as exc:
+            return content_error_response(request, exc)
+        return templates.TemplateResponse(
+            request, "archive.html", {"page": page, "context": context}
         )
 
     @app.get("/{date_value}", response_class=HTMLResponse)

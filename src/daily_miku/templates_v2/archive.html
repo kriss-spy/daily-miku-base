@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Archive | Daily Miku</title>
+    <link rel="stylesheet" href="/static/editorial.css">
+  </head>
+  <body>
+    <header class="site-header"><a class="wordmark" href="/">Daily Miku</a><a href="/search">Search</a></header>
+    <main class="collection-page">
+      <p class="eyebrow">Newest first</p><h1>Daily Slot Archive</h1>
+      {% if page.items %}
+      <ol class="archive-grid">
+        {% for slot in page.items %}
+        <li class="archive-card archive-card--{{ slot.state.value }}">
+          <a href="/{{ slot.day.value.isoformat() }}">
+            {% if slot.state.value == "selected" %}<img src="/image/{{ slot.day.value.isoformat() }}" alt="{{ slot.items[0].title }}">{% else %}<div class="archive-conflict" aria-hidden="true"></div>{% endif %}
+            <time datetime="{{ slot.day.value.isoformat() }}">{{ slot.day.value.isoformat() }}</time>
+            <strong>{% if slot.state.value == "selected" %}{{ slot.items[0].title }}{% else %}Unresolved conflict · {{ slot.items|length }} candidates{% endif %}</strong>
+          </a>
+        </li>
+        {% endfor %}
+      </ol>
+      {% else %}<p class="empty-result">The archive has no non-empty Daily Slots.</p>{% endif %}
+      {% if context %}
+      <section aria-labelledby="calendar-context"><h2 id="calendar-context">Calendar context</h2>
+        <ol class="calendar-context">{% for slot in context %}<li class="calendar-cell calendar-cell--{{ slot.state.value }}"><a href="/{{ slot.day.value.isoformat() }}">{{ slot.day.value.isoformat() }} · {{ slot.state.value }}</a></li>{% endfor %}</ol>
+      </section>
+      {% endif %}
+      {% if page.next_cursor %}<a class="next-page" href="/archive?cursor={{ page.next_cursor }}">Older Daily Slots</a>{% endif %}
+    </main>
+  </body>
+</html>

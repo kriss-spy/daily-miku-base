@@ -89,6 +89,39 @@ def main() -> None:
             print("Usage: daily-miku doctor [--json]", file=sys.stderr)
             sys.exit(2)
         sys.exit(cli.run_doctor(json_output="--json" in options))
+    elif command == "archive":
+        archive_command = sys.argv[2] if len(sys.argv) > 2 else ""
+        options = sys.argv[3:]
+        json_output = "--json" in options
+        cursor = None
+        limit = 24
+        valid = archive_command == "list"
+        index = 0
+        while valid and index < len(options):
+            option = options[index]
+            if option == "--json":
+                index += 1
+            elif option in ("--cursor", "--limit") and index + 1 < len(options):
+                value = options[index + 1]
+                if option == "--cursor":
+                    cursor = value
+                else:
+                    try:
+                        limit = int(value)
+                    except ValueError:
+                        valid = False
+                index += 2
+            else:
+                valid = False
+        if not valid or options.count("--json") > 1:
+            print(
+                "Usage: daily-miku archive list [--cursor CURSOR] [--limit N] [--json]",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        sys.exit(
+            cli.run_archive_list(cursor=cursor, limit=limit, json_output=json_output)
+        )
     elif command == "image":
         options = sys.argv[3:]
         image_command = sys.argv[2] if len(sys.argv) > 2 else ""

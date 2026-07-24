@@ -429,6 +429,41 @@ def test_search_and_statistics_reject_malformed_requests(url: str) -> None:
     assert response.status_code == 400
 
 
+def test_archive_api_and_html_keep_complete_conflicts_newest_first() -> None:
+    client = slot_client()
+
+    first = client.get("/api/archive", params={"limit": 1})
+    second = client.get(
+        "/api/archive",
+        params={"limit": 1, "cursor": first.json()["next_cursor"]},
+    )
+    html = client.get("/archive")
+
+    assert first.json()["items"][0]["date"] == "2026-07-18"
+    assert first.json()["items"][0]["state"] == "conflict"
+    assert len(first.json()["items"][0]["items"]) == 2
+    assert second.json()["items"][0]["date"] == "2026-07-17"
+    assert first.json()["links"]["next"]
+    assert html.status_code == 200
+    assert "Unresolved conflict · 2 candidates" in html.text
+    assert 'href="/2026-07-18"' in html.text
+    assert "archive-grid" in html.text
+
+    context = client.get("/archive", params={"from": "2026-07-17", "to": "2026-07-19"})
+    assert "2026-07-19 · empty" in context.text
+    assert "2026-07-18 · conflict" in context.text
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["/api/archive?limit=0", "/api/archive?limit=101", "/api/archive?cursor=bad"],
+)
+def test_archive_rejects_invalid_limits_and_cursors(url: str) -> None:
+    response = slot_client().get(url)
+
+    assert response.status_code == 400
+
+
 def test_internal_reconcile_requires_bearer_authentication() -> None:
     settings = Settings.in_memory()
     source = InMemoryContentSource((TaggedItem(7),))

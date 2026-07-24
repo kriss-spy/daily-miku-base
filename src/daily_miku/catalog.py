@@ -225,6 +225,27 @@ class SlotCatalog:
         )
         return SlotPage(slots, next_cursor)
 
+    def archive(
+        self, *, cursor: str | None = None, limit: int = DEFAULT_PAGE_LIMIT
+    ) -> SlotPage:
+        """Return non-empty Slots newest-first through a stable opaque cursor."""
+        _validate_limit(limit)
+        today = self.calendar.today(self.clock)
+        grouped = self._group(
+            self.ledger.candidates_between(SelectionDay(date.min), today)
+        )
+        days = sorted(grouped, reverse=True)
+        offset = _decode_cursor(cursor, "archive")
+        if offset > len(days):
+            raise InvalidCursor("cursor has expired")
+        selected = days[offset : offset + limit]
+        slots = tuple(self._slot(day, grouped[day]) for day in selected)
+        next_offset = offset + len(selected)
+        next_cursor = (
+            _encode_cursor(next_offset, "archive") if next_offset < len(days) else None
+        )
+        return SlotPage(slots, next_cursor)
+
     def statistics(
         self, first: date | None = None, last: date | None = None
     ) -> SlotStatistics:
