@@ -13,12 +13,13 @@ import psycopg
 from psycopg_pool import PoolTimeout
 
 from .catalog import SlotCatalog
+from .content_source import ContentDependencyError
 from .domain import SlotState
 from .images import ImageResolutionKind
 from .images.blob import BlobDependencyError, BlobStore
 from .images.pipeline import ImagePipeline
 from .ledger.database import ConnectionFactory, postgres_connections
-from .reconcile import Reconciler
+from .selections import MultiDateAssignment
 
 
 class DeliveryDependencyError(RuntimeError):
@@ -220,9 +221,8 @@ class DeliveryReport:
 
 @dataclass(frozen=True)
 class EmailDelivery:
-    """Shared reconciliation, Slot, image, and recipient delivery behavior."""
+    """Shared current Slot, image, and recipient delivery behavior."""
 
-    reconciler: Reconciler
     catalog: SlotCatalog
     images: ImagePipeline
     blobs: BlobStore
@@ -232,15 +232,19 @@ class EmailDelivery:
     recipients: tuple[str, ...]
 
     def send(self, day: date, *, force: bool = False) -> DeliveryReport:
-        report = self.reconciler.reconcile()
-        if report.status.value != "complete":
-            raise DeliveryDependencyError("Reconciliation did not complete")
-        slot = self.catalog.get_slot(day)
+        try:
+            slot = self.catalog.get_slot(day)
+        except MultiDateAssignment as exc:
+            raise DeliveryBlocked("multi_date_assignment", str(exc)) from exc
+        except ContentDependencyError as exc:
+            raise DeliveryDependencyError(
+                "The current selection snapshot is unavailable"
+            ) from exc
         if slot.state is SlotState.EMPTY:
             raise DeliveryBlocked("empty", "The Daily Slot is empty.")
         if slot.state is SlotState.CONFLICT:
             raise DeliveryBlocked("conflict", "The Daily Slot has a conflict.")
-        resolution = self.images.resolve_image(day)
+        resolution = self.images.resolve_image(day, slot=slot)
         if resolution.kind is ImageResolutionKind.NO_IMAGE:
             raise DeliveryBlocked("failed", "No controlled image is available.")
         if resolution.kind is not ImageResolutionKind.REDIRECT:

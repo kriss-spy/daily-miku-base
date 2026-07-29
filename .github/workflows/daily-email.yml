@@ -36,7 +36,6 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
           DAILY_MIKU_OPERATOR: github-actions
-          DAILY_MIKU_RECONCILE_SECRET: ${{ secrets.DAILY_MIKU_RECONCILE_SECRET }}
           DAILY_MIKU_EMAIL_FROM: ${{ secrets.DAILY_MIKU_EMAIL_FROM }}
           DAILY_MIKU_EMAIL_RECIPIENTS: ${{ secrets.DAILY_MIKU_EMAIL_RECIPIENTS }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}

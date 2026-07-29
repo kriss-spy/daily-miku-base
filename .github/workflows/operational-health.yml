@@ -10,9 +10,8 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || vars.DAILY_MIKU_MONITORING_ENABLED == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Check readiness and reconciliation freshness
+      - name: Check readiness
         env:
           PREVIEW_URL: ${{ secrets.DAILY_MIKU_PREVIEW_URL }}
         run: |
           curl --fail --silent --show-error "$PREVIEW_URL/ready"
-          curl --fail --silent --show-error "$PREVIEW_URL/internal/reconciliation-status"

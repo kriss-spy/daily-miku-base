@@ -50,10 +50,8 @@
         <dl class="metadata">
           {% if item.source_url %}<div><dt>Source</dt><dd><a href="{{ item.source_url }}" rel="noreferrer">{{ item.domain or "Original artwork" }}</a></dd></div>{% endif %}
           <div><dt>Raindrop ID</dt><dd>{{ item.raindrop_id }}</dd></div>
-          <div><dt>Recording method</dt><dd>{{ item.recording_method.value }}</dd></div>
-          <div><dt>First observed</dt><dd><time datetime="{{ item.first_observed_at.isoformat() }}">{{ item.first_observed_at.strftime("%Y-%m-%d %H:%M UTC") }}</time></dd></div>
+          <div><dt>Selection tag</dt><dd>{{ item.selection_tag }}</dd></div>
         </dl>
-        <p class="context">{% if item.recording_method.value == "observed" %}Observed during reconciliation; this is not claimed as the exact tag-add time.{% elif item.recording_method.value == "legacy" %}Derived from retained legacy evidence.{% else %}Recorded through an audited manual correction.{% endif %}</p>
         {% elif slot.state.value == "empty" %}
         <p class="state-label">Open Daily Slot</p>
         <h1>Nothing was selected</h1>

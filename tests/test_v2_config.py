@@ -42,9 +42,11 @@ def test_settings_apply_defaults_and_parse_recipients() -> None:
     settings = Settings(**values)
 
     assert settings.timezone_name == "Asia/Shanghai"
-    assert settings.tag == "daily-miku"
+    assert "tag" not in Settings.model_fields
     assert settings.serverless is False
     assert settings.smtp_port == 587
+    assert settings.selection_snapshot_ttl == 30
+    assert "reconcile_secret" not in Settings.model_fields
     assert settings.email_recipients == (
         "first@example.com",
         "second@example.com",

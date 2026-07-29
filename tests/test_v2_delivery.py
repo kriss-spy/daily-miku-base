@@ -10,7 +10,7 @@ import pytest
 from PIL import Image
 
 from daily_miku.config import Settings
-from daily_miku.content_source import InMemoryContentSource, TaggedItem
+from daily_miku.content_source import InMemoryContentSource, ScanStatus, TaggedItem
 from daily_miku.delivery import (
     DeliveryBlocked,
     DeliveryDependencyError,
@@ -48,6 +48,7 @@ def delivery_graph(*, recipients: str = "one@example.com,two@example.com"):
                 title="Snow Miku",
                 excerpt="A winter portrait",
                 source_url="https://example.com/art/7",
+                tags=("daily-miku-2026-07-19",),
             ),
         )
     )
@@ -60,7 +61,6 @@ def delivery_graph(*, recipients: str = "one@example.com,two@example.com"):
         delivery_store=InMemoryDeliveryStore(),
         mailer=mailer,
     )
-    services.reconciler.reconcile()
     output = BytesIO()
     Image.new("RGB", (3, 2), (16, 32, 64)).save(output, format="PNG")
     services.images.ingest(7, output.getvalue(), "artist permission")
@@ -81,6 +81,7 @@ def test_delivery_is_separate_multipart_controlled_and_idempotent() -> None:
     }
     assert second.status == "already_sent"
     assert second.skipped == 2
+    assert not hasattr(services, "ledger")
     assert len(mailer.messages) == 2
     assert [message["To"] for message in mailer.messages] == [
         "one@example.com",
@@ -125,6 +126,17 @@ def test_empty_slot_sends_nothing() -> None:
 
     with pytest.raises(DeliveryBlocked, match="empty"):
         services.email_delivery.send(date(2026, 7, 18))
+
+    assert mailer.messages == []
+
+
+def test_incomplete_selection_snapshot_is_a_delivery_dependency_failure() -> None:
+    services, mailer = delivery_graph()
+    assert isinstance(services.content_source, InMemoryContentSource)
+    services.content_source.status = ScanStatus.INCOMPLETE
+
+    with pytest.raises(DeliveryDependencyError, match="selection snapshot"):
+        services.email_delivery.send(date(2026, 7, 19))
 
     assert mailer.messages == []
 

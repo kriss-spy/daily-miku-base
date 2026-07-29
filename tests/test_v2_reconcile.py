@@ -148,7 +148,10 @@ def test_raindrop_adapter_reads_every_page_without_last_update_sort() -> None:
         requests_seen.append(kwargs)
         page = kwargs["params"]["page"]  # type: ignore[index]
         start = int(page) * 50
-        items = [{"_id": item_id} for item_id in range(start + 1, 52)][:50]
+        items = [
+            {"_id": item_id, "tags": ["daily-miku"]}
+            for item_id in range(start + 1, 52)
+        ][:50]
         return FakeResponse({"count": 51, "items": items})
 
     scan = RaindropContentSource("token", "daily-miku", get=get).scan_tagged()
@@ -157,6 +160,7 @@ def test_raindrop_adapter_reads_every_page_without_last_update_sort() -> None:
     assert len(scan.items) == 51
     assert [request["params"]["page"] for request in requests_seen] == [0, 1]  # type: ignore[index]
     assert all("sort" not in request["params"] for request in requests_seen)  # type: ignore[operator]
+    assert all("search" not in request["params"] for request in requests_seen)  # type: ignore[operator]
 
 
 def test_raindrop_adapter_captures_legacy_initialization_fields() -> None:
@@ -170,6 +174,7 @@ def test_raindrop_adapter_captures_legacy_initialization_fields() -> None:
                         "lastUpdate": "2026-07-18T16:30:00.000Z",
                         "link": "https://example.com/work",
                         "cover": "https://cdn.example/work.jpg",
+                        "tags": ["tag"],
                     }
                 ],
             }
@@ -183,6 +188,7 @@ def test_raindrop_adapter_captures_legacy_initialization_fields() -> None:
             datetime(2026, 7, 18, 16, 30, tzinfo=timezone.utc),
             "https://example.com/work",
             "https://cdn.example/work.jpg",
+            tags=("tag",),
         ),
     )
 
@@ -253,7 +259,11 @@ def test_raindrop_adapter_checks_the_page_after_an_exact_multiple() -> None:
     def get(url: str, **kwargs: object) -> FakeResponse:
         page = int(kwargs["params"]["page"])  # type: ignore[index]
         pages.append(page)
-        items = [{"_id": item_id} for item_id in range(1, 51)] if page == 0 else []
+        items = (
+            [{"_id": item_id, "tags": []} for item_id in range(1, 51)]
+            if page == 0
+            else []
+        )
         return FakeResponse({"count": 50, "items": items})
 
     scan = RaindropContentSource("token", "tag", get=get).scan_tagged()
@@ -276,7 +286,12 @@ def test_raindrop_adapter_distinguishes_failed_and_incomplete_scans() -> None:
         if calls == 2:
             raise requests.Timeout("secret upstream detail")
         return FakeResponse(
-            {"count": 51, "items": [{"_id": item_id} for item_id in range(1, 51)]}
+            {
+                "count": 51,
+                "items": [
+                    {"_id": item_id, "tags": []} for item_id in range(1, 51)
+                ],
+            }
         )
 
     later = RaindropContentSource("token", "tag", get=fail_second).scan_tagged()

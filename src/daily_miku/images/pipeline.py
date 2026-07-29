@@ -8,9 +8,9 @@ from hashlib import sha256
 from typing import TypeVar
 from uuid import uuid4
 
-from ..catalog import SlotCatalog
+from ..catalog import CatalogSlot, SlotCatalog
 from ..content_source import ContentDependencyError, ContentFailure
-from ..domain import Clock
+from ..domain import Clock, SlotState
 from .blob import BlobDependencyError, BlobStore
 from .publisher import CoverDependencyError, CoverPublisher
 from .retry import RetryPolicy
@@ -180,15 +180,17 @@ class ImagePipeline:
                 "Image withdrawal dependency failed.", ImageFailure.UNAVAILABLE
             ) from exc
 
-    def resolve_image(self, day: date) -> ImageResolution:
+    def resolve_image(
+        self, day: date, *, slot: CatalogSlot | None = None
+    ) -> ImageResolution:
         """Resolve one date without forwarding unvalidated upstream bytes."""
         try:
-            _, candidates = self.catalog.resolve_candidates(day)
-            if not candidates:
+            resolved_slot = slot or self.catalog.get_slot(day)
+            if not resolved_slot.items:
                 return ImageResolution(ImageResolutionKind.NO_IMAGE)
-            if len(candidates) > 1:
+            if resolved_slot.state is SlotState.CONFLICT:
                 return ImageResolution(ImageResolutionKind.CONFLICT)
-            raindrop_id = next(iter(candidates)).raindrop_id
+            raindrop_id = resolved_slot.items[0].raindrop_id
             if self.repository.withdrawal_for(raindrop_id) is not None:
                 return ImageResolution(ImageResolutionKind.WITHDRAWN)
             active = self.repository.active_for(raindrop_id)
@@ -196,10 +198,7 @@ class ImagePipeline:
                 return ImageResolution(
                     ImageResolutionKind.REDIRECT, active.blob_url, active.digest
                 )
-            items = self.catalog.content_source.get_items((raindrop_id,))
-            if len(items) != 1:
-                return ImageResolution(ImageResolutionKind.UPSTREAM)
-            item = items[0]
+            item = resolved_slot.items[0]
             if item.cover_identity:
                 # Legacy covers are not trusted or imported automatically. Without a
                 # validated mirror, an upstream candidate is a 502 rather than bytes.

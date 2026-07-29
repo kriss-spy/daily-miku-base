@@ -16,8 +16,6 @@ from daily_miku.content_source import (
 from daily_miku.domain import FixedClock, RecordingMethod, SelectionDay, SlotCandidate
 from daily_miku.http import create_app
 from daily_miku.ledger.memory import InMemoryLedger
-from daily_miku.ledger.port import LedgerDependencyError
-from daily_miku.ledger.postgres import PostgresLedger
 from daily_miku.logging_config import JSONFormatter
 from daily_miku.services import build_services
 
@@ -45,14 +43,25 @@ def slot_client(*, lookup_failure: ContentFailure | None = None) -> TestClient:
         (
             TaggedItem(
                 3,
+                last_update=observed_at,
                 source_url="https://example.com/three",
                 title="Three",
                 excerpt="Description",
                 domain="example.com",
-                tags=("daily-miku",),
+                tags=("daily-miku-2026-07-17",),
             ),
-            TaggedItem(8, source_url="https://example.com/eight", title="Eight"),
-            TaggedItem(9, source_url="https://example.com/nine", title="Nine"),
+            TaggedItem(
+                8,
+                source_url="https://example.com/eight",
+                title="Eight",
+                tags=("daily-miku-2026-07-18",),
+            ),
+            TaggedItem(
+                9,
+                source_url="https://example.com/nine",
+                title="Nine",
+                tags=("daily-miku-2026-07-18",),
+            ),
         ),
         lookup_failure=lookup_failure,
     )
@@ -74,10 +83,13 @@ def test_composition_root_builds_an_in_memory_http_graph() -> None:
     assert app.state.services.calendar.timezone.key == "Asia/Shanghai"
 
 
-def test_composition_root_uses_durable_ledger_by_default() -> None:
+def test_composition_root_has_no_selection_ledger_services() -> None:
     services = build_services(Settings.in_memory())
 
-    assert isinstance(services.ledger, PostgresLedger)
+    assert not hasattr(services, "ledger")
+    assert not hasattr(services, "reconciler")
+    assert not hasattr(services, "corrector")
+    assert not hasattr(services, "initializer")
 
 
 def test_app_uses_settings_from_an_injected_service_graph() -> None:
@@ -163,9 +175,8 @@ def test_dated_today_and_range_return_complete_shared_representations() -> None:
                 "source_url": "https://example.com/three",
                 "image_url": "/image/2026-07-17",
                 "domain": "example.com",
-                "tags": ["daily-miku"],
-                "recording_method": "observed",
-                "first_observed_at": "2026-07-16T16:03:00Z",
+                "tags": ["daily-miku-2026-07-17"],
+                "selection_tag": "daily-miku-2026-07-17",
             }
         ],
         "links": {
@@ -243,10 +254,10 @@ def test_selector_absence_remains_distinct_from_dependency_failure() -> None:
     assert random_no_result.json()["error"]["code"] == "slot_not_found"
 
 
-def test_ledger_dependency_failure_is_no_store_503() -> None:
+def test_slot_resolution_does_not_require_the_legacy_ledger() -> None:
     class FailingLedger(InMemoryLedger):
         def candidates_for(self, day: SelectionDay) -> tuple[SlotCandidate, ...]:
-            raise LedgerDependencyError("database unavailable")
+            raise AssertionError("Slot resolution must not read the ledger")
 
     services = build_services(
         Settings.in_memory(),
@@ -257,9 +268,8 @@ def test_ledger_dependency_failure_is_no_store_503() -> None:
 
     response = TestClient(create_app(services=services)).get("/api/slots/2026-07-19")
 
-    assert response.status_code == 503
-    assert response.json()["error"]["code"] == "ledger_unavailable"
-    assert response.headers["Cache-Control"] == "no-store"
+    assert response.status_code == 200
+    assert response.json()["state"] == "empty"
 
 
 @pytest.mark.parametrize(
@@ -293,7 +303,8 @@ def test_html_routes_render_selected_slot_and_calendar_navigation() -> None:
     assert 'alt="Three"' in selected.text
     assert "Description" in selected.text
     assert "Raindrop ID" in selected.text and ">3<" in selected.text
-    assert "Observed during reconciliation" in selected.text
+    assert "daily-miku-2026-07-17" in selected.text
+    assert "Recording method" not in selected.text
     assert 'href="/2026-07-16"' in selected.text
     assert 'href="/2026-07-18"' in selected.text
     assert 'aria-current="date"' in selected.text
@@ -467,80 +478,60 @@ def test_archive_rejects_invalid_limits_and_cursors(url: str) -> None:
     assert response.status_code == 400
 
 
-def test_internal_reconcile_requires_bearer_authentication() -> None:
+def test_reconciliation_endpoints_are_removed() -> None:
+    client = slot_client()
+
+    assert client.post("/internal/reconcile").status_code == 404
+    assert client.get("/internal/reconciliation-status").status_code == 404
+
+
+def test_multi_date_assignment_has_exact_409_contract() -> None:
     settings = Settings.in_memory()
-    source = InMemoryContentSource((TaggedItem(7),))
+    source = InMemoryContentSource(
+        (
+            TaggedItem(
+                7,
+                tags=("daily-miku-2026-07-17", "daily-miku-2026-07-18"),
+            ),
+        )
+    )
     services = build_services(
         settings,
         clock=FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
         ledger=InMemoryLedger(),
         content_source=source,
     )
+
     client = TestClient(create_app(services=services))
-
-    missing = client.post("/internal/reconcile")
-    invalid = client.post(
-        "/internal/reconcile", headers={"Authorization": "Bearer incorrect"}
-    )
-    non_ascii = client.post(
-        "/internal/reconcile",
-        headers=[(b"authorization", b"Bearer incorrect-\xe9")],
+    response = client.get("/api/slots/2026-07-17")
+    image = client.get("/image/2026-07-17")
+    statistics = client.get(
+        "/api/statistics", params={"from": "2026-07-17", "to": "2026-07-19"}
     )
 
-    assert missing.status_code == invalid.status_code == 401
-    assert missing.headers["WWW-Authenticate"] == "Bearer"
-    assert missing.json()["error"]["code"] == "authentication_required"
-    assert invalid.json()["error"]["code"] == "authentication_required"
-    assert non_ascii.status_code == 401
-    assert source.scan_count == 0
+    assert response.status_code == image.status_code == statistics.status_code == 409
+    assert response.json()["error"]["code"] == "multi_date_assignment"
+    assert response.json()["error"]["details"]["assignments"] == [
+        {
+            "raindrop_id": 7,
+            "selection_tags": [
+                "daily-miku-2026-07-17",
+                "daily-miku-2026-07-18",
+            ],
+        }
+    ]
+    assert response.headers["Cache-Control"] == "no-store"
 
 
-def test_internal_reconcile_invokes_shared_idempotent_service() -> None:
-    settings = Settings.in_memory()
-    source = InMemoryContentSource((TaggedItem(7), TaggedItem(9)))
+def test_statistics_maps_incomplete_snapshot_failure() -> None:
     services = build_services(
-        settings,
+        Settings.in_memory(),
         clock=FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
-        ledger=InMemoryLedger(),
-        content_source=source,
-    )
-    client = TestClient(create_app(services=services))
-    headers = {"Authorization": "Bearer not-a-real-secret"}
-
-    first = client.post("/internal/reconcile", headers=headers)
-    second = client.post("/internal/reconcile", headers=headers)
-
-    assert first.status_code == second.status_code == 200
-    assert first.json() == {
-        "run_id": 1,
-        "status": "complete",
-        "discovered": 2,
-        "inserted": 2,
-    }
-    assert second.json()["inserted"] == 0
-    assert services.reconciler.content_source is services.content_source
-    assert services.reconciler.ledger is services.ledger
-
-
-def test_internal_reconcile_exposes_incomplete_run_as_dependency_failure() -> None:
-    settings = Settings.in_memory()
-    source = InMemoryContentSource((TaggedItem(7),), status=ScanStatus.INCOMPLETE)
-    services = build_services(
-        settings,
-        clock=FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
-        ledger=InMemoryLedger(),
-        content_source=source,
+        in_memory=True,
+        content_source=InMemoryContentSource(status=ScanStatus.INCOMPLETE),
     )
 
-    response = TestClient(create_app(services=services)).post(
-        "/internal/reconcile",
-        headers={"Authorization": "Bearer not-a-real-secret"},
-    )
+    response = TestClient(create_app(services=services)).get("/api/statistics")
 
-    assert response.status_code == 503
-    assert response.json()["error"] == {
-        "code": "injected_scan_failure",
-        "message": "The tagged set could not be scanned completely.",
-        "details": {"run_id": 1, "status": "incomplete", "discovered": 1},
-        "request_id": response.headers["X-Request-ID"],
-    }
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "content_upstream_failed"

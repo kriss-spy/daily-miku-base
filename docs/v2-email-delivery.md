@@ -1,7 +1,7 @@
 # V2 Email Delivery
 
 `daily-miku email send [--date DATE] [--force] [--json]` validates configuration,
-reconciles the complete configured Raindrop tag, resolves one Daily Slot, requires
+scans current Dated Selection Tags, resolves one Daily Slot, requires
 one controlled image, and sends a separate multipart message to each configured
 recipient. Reports contain recipient counts, never addresses.
 

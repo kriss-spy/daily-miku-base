@@ -6,19 +6,18 @@ uv run --python 3.13 --extra dev ruff check \
   src/daily_miku/catalog.py \
   src/daily_miku/config.py \
   src/daily_miku/content_source.py \
-  src/daily_miku/correction.py \
+  src/daily_miku/asgi.py \
   src/daily_miku/delivery.py \
   src/daily_miku/doctor.py \
   src/daily_miku/domain \
   src/daily_miku/http \
   src/daily_miku/images \
-  src/daily_miku/initialize.py \
   src/daily_miku/ledger \
   src/daily_miku/logging_config.py \
   src/daily_miku/main.py \
   src/daily_miku/migration_baseline.py \
-  src/daily_miku/reconcile.py \
   src/daily_miku/reliability.py \
+  src/daily_miku/selections.py \
   src/daily_miku/services.py \
   tests/test_v2_*.py
 uv run --python 3.13 --extra dev ruff check --select=PYI .
@@ -37,6 +36,7 @@ required = {
     "daily_miku/templates_v2/archive.html",
     "daily_miku/templates_v2/search.html",
     "daily_miku/ledger/migrations/0004_email_deliveries.sql",
+    "daily_miku/ledger/migrations/0005_remove_selection_ledger.sql",
 }
 missing = sorted(required - names)
 if missing:

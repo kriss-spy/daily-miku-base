@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from daily_miku.config import Settings
-from daily_miku.content_source import InMemoryContentSource, ScanStatus
+from daily_miku.content_source import InMemoryContentSource, ScanStatus, TaggedItem
 from daily_miku.domain import FixedClock
 from daily_miku.http import create_app
 from daily_miku.ledger.memory import InMemoryLedger
@@ -44,18 +44,22 @@ def test_health_is_live_while_readiness_exposes_safe_dependency_state() -> None:
     assert failed.headers["Cache-Control"] == "no-store"
 
 
-def test_reconciliation_freshness_separates_latest_and_latest_complete() -> None:
-    client, ledger = reliability_client()
-    services = client.app.state.services
-    services.reconciler.reconcile()
-    ledger.start_reconciliation(datetime(2026, 7, 19, tzinfo=timezone.utc))
+def test_selection_snapshot_cache_reuses_one_bounded_account_scan() -> None:
+    source = InMemoryContentSource(
+        (TaggedItem(1, tags=("daily-miku-2026-07-19",)),)
+    )
+    services = build_services(
+        Settings.in_memory(),
+        clock=FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
+        in_memory=True,
+        content_source=source,
+    )
 
-    response = client.get("/internal/reconciliation-status")
+    services.catalog.today()
+    services.catalog.archive()
+    services.catalog.statistics()
 
-    assert response.status_code == 200
-    assert response.json()["latest"]["status"] == "running"
-    assert response.json()["latest_complete"]["status"] == "complete"
-    assert response.json()["status"] == "fresh"
+    assert source.scan_count == 1
 
 
 def test_rate_limiter_has_retry_after_and_recovers_after_window() -> None:

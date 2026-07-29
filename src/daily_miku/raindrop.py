@@ -3,11 +3,19 @@
 import logging
 import os
 import time
-from datetime import datetime, timezone, timedelta
-from typing import Optional
+from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
+from typing import Any, Optional
 
 import requests
 from dotenv import load_dotenv
+
+from .content_source import PAGE_SIZE, RaindropContentSource
+from .selection_initialize import (
+    GENERIC_SELECTION_TAG,
+    SelectionInitializationDependencyError,
+    SelectionTagItem,
+)
 
 load_dotenv()
 
@@ -224,6 +232,144 @@ class RaindropClient:
     def clear_cache(self) -> None:
         """Clear the cache."""
         self.cache.clear()
+
+
+class RaindropSelectionTagStore:
+    """Raindrop adapter for complete exact-tag scans and single-item updates."""
+
+    def __init__(
+        self,
+        token: str,
+        *,
+        get: Callable[..., Any] = requests.get,
+        put: Callable[..., Any] = requests.put,
+        timeout: float = 10.0,
+    ) -> None:
+        """Configure authenticated HTTP operations without retaining tag state."""
+        self._headers = {"Authorization": f"Bearer {token}"}
+        self._get = get
+        self._put = put
+        self._timeout = timeout
+
+    def scan_generic(self) -> tuple[SelectionTagItem, ...]:
+        """Fetch every bookmark page and retain selection-tag matches locally."""
+        results: list[SelectionTagItem] = []
+        discovered_ids: set[int] = set()
+        expected_count: int | None = None
+        raw_count = 0
+        page = 0
+        try:
+            while True:
+                response = self._get(
+                    f"{BASE_URL}/raindrops/0",
+                    headers=self._headers,
+                    params={
+                        "perpage": PAGE_SIZE,
+                        "page": page,
+                    },
+                    timeout=self._timeout,
+                )
+                response.raise_for_status()
+                payload = response.json()
+                raw_items, count = self._page(payload)
+                if expected_count is None:
+                    expected_count = count
+                elif count != expected_count:
+                    raise ValueError("tagged set changed during pagination")
+                raw_count += len(raw_items)
+                for raw in raw_items:
+                    item = self._item(raw)
+                    if item.raindrop_id in discovered_ids:
+                        raise ValueError("pagination returned a repeated identity")
+                    discovered_ids.add(item.raindrop_id)
+                    if any(
+                        tag == GENERIC_SELECTION_TAG
+                        or tag.startswith(f"{GENERIC_SELECTION_TAG}-")
+                        for tag in item.tags
+                    ):
+                        results.append(item)
+                if len(raw_items) < PAGE_SIZE:
+                    if raw_count != expected_count:
+                        raise ValueError("tagged-set count mismatch")
+                    return tuple(results)
+                page += 1
+                if page > (expected_count // PAGE_SIZE) + 1:
+                    raise ValueError("pagination exceeded expected count")
+        except (requests.RequestException, TypeError, ValueError, KeyError) as exc:
+            raise SelectionInitializationDependencyError(
+                "Raindrop could not provide a complete selection-tag snapshot."
+            ) from exc
+
+    def get(self, raindrop_id: int) -> SelectionTagItem:
+        """Fetch current mutation evidence for one Raindrop."""
+        try:
+            response = self._get(
+                f"{BASE_URL}/raindrop/{raindrop_id}",
+                headers=self._headers,
+                timeout=self._timeout,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            raw = payload.get("item") if isinstance(payload, dict) else None
+            if not isinstance(raw, dict):
+                raise ValueError("response does not contain an item")
+            item = self._item(raw)
+            if item.raindrop_id != raindrop_id:
+                raise ValueError("response identity does not match request")
+            return item
+        except (requests.RequestException, TypeError, ValueError, KeyError) as exc:
+            raise SelectionInitializationDependencyError(
+                "Raindrop could not refetch initialization evidence."
+            ) from exc
+
+    def update_tags(self, raindrop_id: int, tags: tuple[str, ...]) -> None:
+        """Use Raindrop's supported single-raindrop PUT replacement semantics."""
+        try:
+            response = self._put(
+                f"{BASE_URL}/raindrop/{raindrop_id}",
+                headers=self._headers,
+                json={"tags": list(tags)},
+                timeout=self._timeout,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, dict) or payload.get("result") is not True:
+                raise ValueError("response does not confirm the update")
+        except (requests.RequestException, TypeError, ValueError) as exc:
+            raise SelectionInitializationDependencyError(
+                "Raindrop could not update selection tags."
+            ) from exc
+
+    @staticmethod
+    def _page(payload: Any) -> tuple[list[dict[str, Any]], int]:
+        if not isinstance(payload, dict):
+            raise ValueError("response is not an object")
+        raw_items = payload.get("items")
+        count = payload.get("count")
+        if (
+            not isinstance(raw_items, list)
+            or not isinstance(count, int)
+            or count < 0
+            or len(raw_items) > PAGE_SIZE
+            or not all(isinstance(item, dict) for item in raw_items)
+        ):
+            raise ValueError("response has invalid pagination fields")
+        return raw_items, count
+
+    @staticmethod
+    def _item(raw: dict[str, Any]) -> SelectionTagItem:
+        if "tags" not in raw:
+            raise ValueError("response omits tags")
+        parsed = RaindropContentSource._parse_item(raw)
+        if parsed.last_update is None:
+            raise ValueError("response omits lastUpdate")
+        return SelectionTagItem(
+            parsed.raindrop_id,
+            parsed.last_update,
+            parsed.tags,
+            parsed.source_url,
+            parsed.cover_identity,
+        )
 
 
 def get_client() -> RaindropClient:

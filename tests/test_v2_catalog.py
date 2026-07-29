@@ -141,11 +141,17 @@ class TestSlotCatalog:
 
     def test_reads_all_states_without_writing(self) -> None:
         ledger = InMemoryLedger()
+        source = InMemoryContentSource(
+            (
+                TaggedItem(3, tags=("daily-miku-2026-07-18",)),
+                TaggedItem(9, tags=("daily-miku-2026-07-19",)),
+                TaggedItem(2, tags=("daily-miku-2026-07-19",)),
+            )
+        )
         catalog = SlotCatalog(
-            ledger,
             Calendar.named("Asia/Shanghai"),
             FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
-            InMemoryContentSource((TaggedItem(2), TaggedItem(3), TaggedItem(9))),
+            source,
         )
         selected_day = SelectionDay(date(2026, 7, 18))
         conflict_day = SelectionDay(date(2026, 7, 19))
@@ -159,23 +165,22 @@ class TestSlotCatalog:
 
         assert empty.state is SlotState.EMPTY
         assert selected.state is SlotState.SELECTED
-        assert [item.raindrop_id for item in conflict.candidates] == [2, 9]
+        assert [item.raindrop_id for item in conflict.items] == [2, 9]
         assert conflict.state is SlotState.CONFLICT
-        assert ledger.write_count == 3
+        assert source.scan_count == 1
 
     def test_rejects_future_dates_without_reading_the_ledger(self) -> None:
-        ledger = InMemoryLedger()
+        source = InMemoryContentSource()
         catalog = SlotCatalog(
-            ledger,
             Calendar.named("Asia/Shanghai"),
             FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
-            InMemoryContentSource(),
+            source,
         )
 
         with pytest.raises(FutureSelectionDay):
             catalog.get_slot(date(2026, 7, 20))
 
-        assert ledger.read_count == 0
+        assert source.scan_count == 0
 
     def test_selectors_ranges_and_current_content_share_one_model(self) -> None:
         now = datetime(2026, 7, 19, tzinfo=timezone.utc)
@@ -188,10 +193,20 @@ class TestSlotCatalog:
                     title="Current title",
                     excerpt="Current excerpt",
                     domain="example.com",
-                    tags=("daily-miku", "blue"),
+                    tags=("daily-miku-2026-07-17", "blue"),
                 ),
-                TaggedItem(8, source_url="https://example.com/eight", title="Eight"),
-                TaggedItem(9, source_url="https://example.com/nine", title="Nine"),
+                TaggedItem(
+                    8,
+                    source_url="https://example.com/eight",
+                    title="Eight",
+                    tags=("daily-miku-2026-07-19",),
+                ),
+                TaggedItem(
+                    9,
+                    source_url="https://example.com/nine",
+                    title="Nine",
+                    tags=("daily-miku-2026-07-19",),
+                ),
             )
         )
         selected_day = SelectionDay(date(2026, 7, 17))
@@ -200,7 +215,6 @@ class TestSlotCatalog:
         ledger.record_candidate(conflict_day, candidate(8))
         ledger.record_candidate(conflict_day, candidate(9))
         catalog = SlotCatalog(
-            ledger,
             Calendar.named("Asia/Shanghai"),
             FixedClock(now),
             source,
@@ -217,11 +231,38 @@ class TestSlotCatalog:
         assert catalog.latest().state is SlotState.CONFLICT
         assert catalog.random().day == selected_day
         assert slots[0].items[0].title == "Current title"
-        assert slots[0].items[0].recording_method is RecordingMethod.OBSERVED
+        assert slots[0].items[0].selection_tag == "daily-miku-2026-07-17"
+
+    def test_archive_cursor_is_stable_when_newer_tags_change(self) -> None:
+        source = InMemoryContentSource(
+            (
+                TaggedItem(1, tags=("daily-miku-2026-07-19",)),
+                TaggedItem(2, tags=("daily-miku-2026-07-18",)),
+                TaggedItem(3, tags=("daily-miku-2026-07-17",)),
+            )
+        )
+        catalog = SlotCatalog(
+            Calendar.named("UTC"),
+            FixedClock(datetime(2026, 7, 20, tzinfo=timezone.utc)),
+            source,
+            snapshot_ttl_seconds=0,
+        )
+
+        first = catalog.archive(limit=1)
+        source.items = (
+            TaggedItem(4, tags=("daily-miku-2026-07-20",)),
+            TaggedItem(2, tags=("daily-miku-2026-07-18",)),
+            TaggedItem(3, tags=("daily-miku-2026-07-17",)),
+        )
+        second = catalog.archive(cursor=first.next_cursor, limit=2)
+
+        assert [slot.day.value for slot in second.items] == [
+            date(2026, 7, 18),
+            date(2026, 7, 17),
+        ]
 
     def test_selector_absence_and_range_bounds_are_explicit(self) -> None:
         catalog = SlotCatalog(
-            InMemoryLedger(),
             Calendar.named("Asia/Shanghai"),
             FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
             InMemoryContentSource(),

@@ -2,9 +2,8 @@
 
 import logging
 import re
-import secrets
 from collections.abc import Awaitable, Callable
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from hashlib import sha256
 from pathlib import Path
 from urllib.parse import urlencode
@@ -32,11 +31,10 @@ from ..logging_config import (
     set_request_id,
     setup_logging,
 )
-from ..ledger.port import LedgerDependencyError, RunStatus
 from ..ledger.migrations import expected_schema_version
 from ..images import ImageResolutionKind
-from ..reconcile import ReconciliationDependencyError
 from ..reliability import RateLimiter
+from ..selections import MultiDateAssignment
 from ..services import Services, build_services
 
 logger = logging.getLogger("daily_miku.v2")
@@ -173,6 +171,27 @@ def create_app(
             headers={"Cache-Control": "no-store"},
         )
 
+    def multi_date_response(
+        request: Request, exc: MultiDateAssignment
+    ) -> JSONResponse:
+        return error_response(
+            request,
+            409,
+            "multi_date_assignment",
+            message=str(exc),
+            details={
+                "date": exc.day.value.isoformat(),
+                "assignments": [
+                    {
+                        "raindrop_id": assignment.raindrop_id,
+                        "selection_tags": list(assignment.selection_tags),
+                    }
+                    for assignment in exc.assignments
+                ],
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+
     def slot_response(slot: CatalogSlot, cache_control: str) -> JSONResponse:
         document = slot_document(
             slot,
@@ -199,14 +218,8 @@ def create_app(
                 message=str(exc),
                 headers={"Cache-Control": "public, max-age=15"},
             )
-        except LedgerDependencyError:
-            return error_response(
-                request,
-                503,
-                "ledger_unavailable",
-                message="The Selection Ledger is temporarily unavailable.",
-                headers={"Cache-Control": "no-store"},
-            )
+        except MultiDateAssignment as exc:
+            return multi_date_response(request, exc)
         except ContentDependencyError as exc:
             return content_error_response(request, exc)
 
@@ -220,11 +233,11 @@ def create_app(
         try:
             checks["schema"] = (
                 "ok"
-                if resolved_services.ledger.schema_version()
+                if resolved_services.schema_version()
                 == expected_schema_version()
                 else "failed"
             )
-        except LedgerDependencyError:
+        except Exception:
             checks["schema"] = "failed"
         try:
             scan = resolved_services.content_source.scan_tagged()
@@ -242,42 +255,6 @@ def create_app(
             message="Required deployment dependencies are not ready.",
             details={"checks": checks},
             headers={"Cache-Control": "no-store"},
-        )
-
-    @app.get("/internal/reconciliation-status")
-    def reconciliation_status(request: Request) -> JSONResponse:
-        try:
-            runs = resolved_services.ledger.reconciliation_runs()
-        except LedgerDependencyError:
-            return error_response(
-                request,
-                503,
-                "ledger_unavailable",
-                headers={"Cache-Control": "no-store"},
-            )
-        latest = _run_document(runs[0]) if runs else None
-        complete_run = next(
-            (
-                run
-                for run in runs
-                if _run_value(run, "status") in ("complete", RunStatus.COMPLETE)
-            ),
-            None,
-        )
-        complete = _run_document(complete_run) if complete_run else None
-        finished = _run_value(complete_run, "finished_at") if complete_run else None
-        stale = (
-            not isinstance(finished, datetime)
-            or (resolved_services.clock.now() - finished).total_seconds() > 1800
-        )
-        return json_response(
-            {
-                "status": "stale" if stale else "fresh",
-                "latest": latest,
-                "latest_complete": complete,
-            },
-            "no-store",
-            validator=False,
         )
 
     @app.get("/api/slots/today")
@@ -325,14 +302,8 @@ def create_app(
             return error_response(
                 request, 422, "future_selection_day", message=str(exc)
             )
-        except LedgerDependencyError:
-            return error_response(
-                request,
-                503,
-                "ledger_unavailable",
-                message="The Selection Ledger is temporarily unavailable.",
-                headers={"Cache-Control": "no-store"},
-            )
+        except MultiDateAssignment as exc:
+            return multi_date_response(request, exc)
         except ContentDependencyError as exc:
             return content_error_response(request, exc)
         today = resolved_services.calendar.today(resolved_services.clock)
@@ -369,13 +340,6 @@ def create_app(
             page = resolved_services.catalog.search(query, cursor=cursor, limit=limit)
         except (ValueError, InvalidCursor) as exc:
             return error_response(request, 400, "search_invalid", message=str(exc))
-        except LedgerDependencyError:
-            return error_response(
-                request,
-                503,
-                "ledger_unavailable",
-                headers={"Cache-Control": "no-store"},
-            )
         except ContentDependencyError as exc:
             return content_error_response(request, exc)
         today = resolved_services.calendar.today(resolved_services.clock)
@@ -405,13 +369,6 @@ def create_app(
             page = resolved_services.catalog.archive(cursor=cursor, limit=limit)
         except (ValueError, InvalidCursor) as exc:
             return error_response(request, 400, "archive_invalid", message=str(exc))
-        except LedgerDependencyError:
-            return error_response(
-                request,
-                503,
-                "ledger_unavailable",
-                headers={"Cache-Control": "no-store"},
-            )
         except ContentDependencyError as exc:
             return content_error_response(request, exc)
         today = resolved_services.calendar.today(resolved_services.clock)
@@ -454,13 +411,10 @@ def create_app(
             return error_response(
                 request, 422, "future_selection_day", message=str(exc)
             )
-        except LedgerDependencyError:
-            return error_response(
-                request,
-                503,
-                "ledger_unavailable",
-                headers={"Cache-Control": "no-store"},
-            )
+        except MultiDateAssignment as exc:
+            return multi_date_response(request, exc)
+        except ContentDependencyError as exc:
+            return content_error_response(request, exc)
         return json_response(statistics.as_dict(), "public, max-age=30, s-maxage=60")
 
     @app.get("/image/{date_value}")
@@ -485,14 +439,8 @@ def create_app(
                 message=str(exc),
                 headers={"Cache-Control": "no-store"},
             )
-        except LedgerDependencyError:
-            return error_response(
-                request,
-                503,
-                "image_unavailable",
-                message="Image resolution is temporarily unavailable.",
-                headers={"Cache-Control": "no-store"},
-            )
+        except MultiDateAssignment as exc:
+            return multi_date_response(request, exc)
 
         mutable_cache = "public, max-age=60, s-maxage=300"
         if resolution.kind is ImageResolutionKind.REDIRECT:
@@ -546,68 +494,26 @@ def create_app(
             headers={"Cache-Control": cache},
         )
 
-    @app.post("/internal/reconcile")
-    def reconcile(request: Request) -> JSONResponse:
-        authorization = request.headers.get("Authorization", "")
-        scheme, separator, credential = authorization.partition(" ")
-        expected = resolved_settings.reconcile_secret.get_secret_value()
-        if (
-            not separator
-            or scheme.lower() != "bearer"
-            or not secrets.compare_digest(
-                credential.encode("utf-8"), expected.encode("utf-8")
-            )
-        ):
-            return error_response(
-                request,
-                401,
-                "authentication_required",
-                message="Valid bearer authentication is required.",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-        try:
-            report = resolved_services.reconciler.reconcile()
-        except ReconciliationDependencyError:
-            return error_response(
-                request,
-                503,
-                "reconciliation_dependency_failed",
-                message="Reconciliation could not access required storage.",
-            )
-        if report.status is not RunStatus.COMPLETE:
-            return error_response(
-                request,
-                503,
-                report.error_code or "reconciliation_failed",
-                message=report.error_message,
-                details={
-                    "run_id": report.run_id,
-                    "status": report.status.value,
-                    "discovered": report.discovered_count,
-                },
-            )
-        return JSONResponse(report.as_dict())
-
     def render_slot(request: Request, day: date) -> Response:
         try:
             slot = resolved_services.catalog.get_slot(day)
             today = resolved_services.calendar.today(resolved_services.clock).value
             rail_start = day - timedelta(days=min(3, day.toordinal() - 1))
             rail_end = min(day + timedelta(days=3), today)
-            rail = resolved_services.catalog.range(rail_start, rail_end)
+            rail = []
+            rail_day = rail_start
+            while rail_day <= rail_end:
+                try:
+                    rail.append(resolved_services.catalog.get_slot(rail_day))
+                except MultiDateAssignment:
+                    pass
+                rail_day += timedelta(days=1)
         except FutureSelectionDay as exc:
             return error_response(
                 request, 422, "future_selection_day", message=str(exc)
             )
-        except LedgerDependencyError:
-            return error_response(
-                request,
-                503,
-                "ledger_unavailable",
-                message="The Selection Ledger is temporarily unavailable.",
-                headers={"Cache-Control": "no-store"},
-            )
+        except MultiDateAssignment as exc:
+            return multi_date_response(request, exc)
         except ContentDependencyError as exc:
             return content_error_response(request, exc)
 
@@ -644,13 +550,6 @@ def create_app(
             )
         try:
             page = resolved_services.catalog.search(query)
-        except LedgerDependencyError:
-            return error_response(
-                request,
-                503,
-                "ledger_unavailable",
-                headers={"Cache-Control": "no-store"},
-            )
         except ContentDependencyError as exc:
             return content_error_response(request, exc)
         return templates.TemplateResponse(
@@ -685,13 +584,8 @@ def create_app(
             )
         except InvalidCursor as exc:
             return error_response(request, 400, "archive_invalid", message=str(exc))
-        except LedgerDependencyError:
-            return error_response(
-                request,
-                503,
-                "ledger_unavailable",
-                headers={"Cache-Control": "no-store"},
-            )
+        except MultiDateAssignment as exc:
+            return multi_date_response(request, exc)
         except ContentDependencyError as exc:
             return content_error_response(request, exc)
         return templates.TemplateResponse(
@@ -754,20 +648,3 @@ class SlotRequestError(ValueError):
         self.status_code = status_code
         self.code = code
         self.message = message
-
-
-def _run_value(run: object, name: str) -> object:
-    if isinstance(run, dict):
-        return run.get(name)
-    return getattr(run, name)
-
-
-def _run_document(run: object) -> dict[str, object]:
-    finished = _run_value(run, "finished_at")
-    status = _run_value(run, "status")
-    return {
-        "run_id": _run_value(run, "run_id"),
-        "status": status.value if isinstance(status, RunStatus) else status,
-        "finished_at": finished.isoformat() if isinstance(finished, datetime) else None,
-        "error_code": _run_value(run, "error_code"),
-    }

@@ -4,6 +4,9 @@ This is a pending verification procedure, not evidence that preview was deployed
 approved. Complete it only after #28 produces the release artifact and #27 has a
 review-complete baseline.
 
+Production selection-tag initialization is already complete; preview verification
+must validate the current tags and must not recreate generic tags or rederive dates.
+
 ## Local Artifact Gate
 
 Run `scripts/verify-local-release.sh` from a clean checkout. Record the commit, wheel
@@ -12,8 +15,8 @@ different build for preview deployment.
 
 ## Isolated Preview Gate
 
-Use isolated Postgres, Blob, SMTP-shape, scheduler secret, logs, and test-channel
-monitoring. Keep reconciliation, email, and monitoring schedules disabled. Apply
+Use isolated operational Postgres, Blob, SMTP-shape, logs, and test-channel
+monitoring. Keep email and monitoring schedules disabled. Apply
 migrations only to isolated preview and prove a repeated apply is a no-op.
 
 Record, without secrets:
@@ -21,10 +24,10 @@ Record, without secrets:
 - protected preview URL and deployment ID;
 - release commit and wheel checksum;
 - baseline manifest checksum and schema version;
-- `doctor`, `/health`, `/ready`, freshness, request-correlation, cache, and rate-limit results;
+- `doctor`, `selection validate`, `/health`, `/ready`, request-correlation, cache, and rate-limit results;
 - selected, empty, conflict, malformed, future, and dependency-failure HTML/JSON outcomes;
 - every retained v1 date and controlled-image or approved exception outcome;
-- manual reconciliation and duplicate invocation outcomes;
+- repeated complete dated-tag scan outcomes, including malformed and multi-date fixtures;
 - email precondition checks using fake or explicitly isolated recipients, with no unintended mail;
 - monitoring test-channel signals for endpoint, scheduler, image, and email failures;
 - schema-compatible v2 recovery deployment ID and rehearsed smoke results.

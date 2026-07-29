@@ -75,7 +75,9 @@ def raster_bytes(
 
 def image_pipeline(
     *,
-    items: tuple[TaggedItem, ...] = (TaggedItem(7, title="Seven"),),
+    items: tuple[TaggedItem, ...] = (
+        TaggedItem(7, title="Seven", tags=("daily-miku-2026-07-18",)),
+    ),
     conflict: bool = False,
 ) -> tuple[
     ImagePipeline,
@@ -93,9 +95,20 @@ def image_pipeline(
     repository = InMemoryImageRepository()
     blob = InMemoryBlobStore()
     publisher = InMemoryCoverPublisher()
-    source = InMemoryContentSource(items)
+    selected_items = [
+        replace(
+            item,
+            tags=item.tags or ("daily-miku-2026-07-18",),
+        )
+        for item in items
+    ]
+    if conflict and not any(item.raindrop_id == 8 for item in selected_items):
+        selected_items.append(
+            TaggedItem(8, tags=("daily-miku-2026-07-18",), title="Eight")
+        )
+    source = InMemoryContentSource(tuple(selected_items))
     catalog = SlotCatalog(
-        ledger, Calendar.named("Asia/Shanghai"), FixedClock(NOW), source
+        Calendar.named("Asia/Shanghai"), FixedClock(NOW), source
     )
     pipeline = ImagePipeline(
         catalog,
@@ -692,10 +705,17 @@ def image_client(
     items: list[TaggedItem] = []
     if selected:
         ledger.record_candidate(day, SlotCandidate(7, RecordingMethod.OBSERVED, NOW))
-        items.append(TaggedItem(7, cover_identity=cover, title="Seven"))
+        items.append(
+            TaggedItem(
+                7,
+                cover_identity=cover,
+                title="Seven",
+                tags=("daily-miku-2026-07-18",),
+            )
+        )
     if conflict:
         ledger.record_candidate(day, SlotCandidate(8, RecordingMethod.MANUAL, NOW))
-        items.append(TaggedItem(8, title="Eight"))
+        items.append(TaggedItem(8, title="Eight", tags=("daily-miku-2026-07-18",)))
     source = InMemoryContentSource(tuple(items), lookup_failure=lookup_failure)
     repository = InMemoryImageRepository(fail=repository_failure)
     blob = InMemoryBlobStore()
@@ -788,7 +808,7 @@ def test_image_http_redirect_is_mutable_and_validated() -> None:
 
 
 @pytest.mark.parametrize("withdraw", [False, True])
-def test_mirror_and_tombstone_resolution_do_not_depend_on_upstream(
+def test_mirror_and_tombstone_resolution_require_current_selection_snapshot(
     withdraw: bool,
 ) -> None:
     client = image_client(
@@ -797,7 +817,7 @@ def test_mirror_and_tombstone_resolution_do_not_depend_on_upstream(
 
     response = client.get("/image/2026-07-18", follow_redirects=False)
 
-    assert response.status_code == (410 if withdraw else 307)
+    assert response.status_code == 504
 
 
 def test_cli_image_commands_map_safety_and_dependency_outcomes(

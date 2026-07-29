@@ -23,4 +23,6 @@ def test_local_release_gate_checks_required_packaged_assets() -> None:
     assert "ruff check --select=PYI" in script
     assert "uv build" in script
     assert "0004_email_deliveries.sql" in script
+    assert "0005_remove_selection_ledger.sql" in script
     assert "templates_v2/archive.html" in script
+    assert "src/daily_miku/reconcile.py" not in script

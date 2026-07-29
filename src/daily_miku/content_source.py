@@ -69,11 +69,14 @@ class TaggedScan:
     items: tuple[TaggedItem, ...] = ()
     error_code: str | None = None
     error_message: str | None = None
+    failure: ContentFailure | None = None
 
     def __post_init__(self) -> None:
         """Keep successful and unsuccessful scan representations distinct."""
         if self.status is ScanStatus.COMPLETE and (
-            self.error_code is not None or self.error_message is not None
+            self.error_code is not None
+            or self.error_message is not None
+            or self.failure is not None
         ):
             raise ValueError("complete scans cannot contain an error")
         if self.status is not ScanStatus.COMPLETE and not self.error_code:
@@ -106,13 +109,17 @@ class InMemoryContentSource:
     def scan_tagged(self) -> TaggedScan:
         """Return the configured scan outcome."""
         self.scan_count += 1
-        if self.status is ScanStatus.COMPLETE:
+        if self.status is ScanStatus.COMPLETE and self.lookup_failure is None:
             return TaggedScan(self.status, self.items)
+        status = self.status
+        if status is ScanStatus.COMPLETE:
+            status = ScanStatus.FAILED
         return TaggedScan(
-            self.status,
+            status,
             self.items,
             self.error_code,
             "The tagged set could not be scanned completely.",
+            self.lookup_failure,
         )
 
     def get_items(self, raindrop_ids: tuple[int, ...]) -> tuple[TaggedItem, ...]:
@@ -154,7 +161,7 @@ class RaindropContentSource:
     timeout: float = 10.0
 
     def scan_tagged(self) -> TaggedScan:
-        """Fetch every page without relying on last-update ordering."""
+        """Fetch all bookmarks and retain every selection-prefix tag locally."""
         discovered: dict[int, TaggedItem] = {}
         expected_count: int | None = None
         page = 0
@@ -165,7 +172,6 @@ class RaindropContentSource:
                     f"{BASE_URL}/raindrops/0",
                     headers={"Authorization": f"Bearer {self.token}"},
                     params={
-                        "search": f"#{self.tag}",
                         "perpage": PAGE_SIZE,
                         "page": page,
                     },
@@ -205,7 +211,15 @@ class RaindropContentSource:
                         "count_mismatch",
                         "The tagged-set count did not match the fetched pages.",
                     )
-                return TaggedScan(ScanStatus.COMPLETE, tuple(discovered.values()))
+                selected = tuple(
+                    item
+                    for item in discovered.values()
+                    if any(
+                        tag == self.tag or tag.startswith("daily-miku-")
+                        for tag in item.tags
+                    )
+                )
+                return TaggedScan(ScanStatus.COMPLETE, selected)
 
             page += 1
             maximum_pages = (expected_count // PAGE_SIZE) + 1
@@ -262,8 +276,10 @@ class RaindropContentSource:
 
         items = []
         for raw_item in raw_items:
-            if not isinstance(raw_item, dict) or not isinstance(
-                raw_item.get("_id"), int
+            if (
+                not isinstance(raw_item, dict)
+                or not isinstance(raw_item.get("_id"), int)
+                or "tags" not in raw_item
             ):
                 raise ValueError("response contains an invalid item")
             items.append(RaindropContentSource._parse_item(raw_item))
@@ -275,7 +291,7 @@ class RaindropContentSource:
     def _parse_item(
         raw_item: dict[str, Any], *, require_content: bool = False
     ) -> TaggedItem:
-        """Validate and map fields used by reconciliation and Slot reads."""
+        """Validate and map fields used by migration tooling and Slot reads."""
         if not isinstance(raw_item.get("_id"), int):
             raise ValueError("response contains an invalid item")
         last_update = raw_item.get("lastUpdate")
@@ -330,4 +346,11 @@ class RaindropContentSource:
             tuple(discovered.values()),
             code,
             "Raindrop could not provide a complete tagged set.",
+            (
+                ContentFailure.TIMEOUT
+                if isinstance(exc, requests.Timeout)
+                else ContentFailure.UNAVAILABLE
+                if isinstance(exc, requests.ConnectionError)
+                else ContentFailure.UPSTREAM
+            ),
         )
