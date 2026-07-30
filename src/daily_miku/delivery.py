@@ -9,6 +9,7 @@ from enum import StrEnum
 from threading import Lock
 from typing import Protocol, cast
 
+import httpx
 import psycopg
 from psycopg_pool import PoolTimeout
 
@@ -188,7 +189,8 @@ class SMTPMailer:
                 server.send_message(message)
         except (OSError, smtplib.SMTPException) as exc:
             transient = isinstance(exc, OSError) or (
-                isinstance(exc, smtplib.SMTPResponseException) and 400 <= exc.smtp_code < 500
+                isinstance(exc, smtplib.SMTPResponseException)
+                and 400 <= exc.smtp_code < 500
             )
             raise DeliveryDependencyError(
                 "SMTP delivery failed", transient=transient
@@ -249,15 +251,34 @@ class EmailDelivery:
             raise DeliveryBlocked("failed", "No controlled image is available.")
         if resolution.kind is not ImageResolutionKind.REDIRECT:
             raise DeliveryDependencyError("The controlled image is unavailable")
-        provenance = self.images.repository.active_for(slot.items[0].raindrop_id)
-        if provenance is None:
-            raise DeliveryBlocked("failed", "No controlled image is available.")
-        try:
-            image_bytes, content_type = self.blobs.get(provenance.blob_key)
-        except BlobDependencyError as exc:
-            raise DeliveryDependencyError(
-                "The controlled image is unavailable"
-            ) from exc
+
+        # Two REDIRECT sub-cases: controlled image (has digest) or direct cover.
+        image_bytes: bytes
+        content_type: str
+        if resolution.digest is not None:
+            # Controlled image: read from blob store.
+            provenance = self.images.repository.active_for(slot.items[0].raindrop_id)
+            if provenance is None:
+                raise DeliveryBlocked("failed", "No controlled image is available.")
+            try:
+                image_bytes, content_type = self.blobs.get(provenance.blob_key)
+            except BlobDependencyError as exc:
+                raise DeliveryDependencyError(
+                    "The controlled image is unavailable"
+                ) from exc
+        else:
+            # Direct cover: fetch from Raindrop CDN URL.
+            if resolution.location is None:
+                raise DeliveryBlocked("failed", "No image URL is available.")
+            try:
+                response = httpx.get(resolution.location, timeout=30.0)
+                response.raise_for_status()
+                image_bytes = response.content
+                content_type = response.headers.get("content-type", "image/jpeg")
+            except httpx.HTTPError as exc:
+                raise DeliveryDependencyError(
+                    "The cover image could not be fetched."
+                ) from exc
 
         sent = skipped = failed = 0
         for recipient in self.recipients:
