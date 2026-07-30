@@ -8,44 +8,42 @@ on:
 
 jobs:
   send_daily_email:
-    if: github.event_name == 'workflow_dispatch' || vars.DAILY_MIKU_EMAIL_ENABLED == 'true'
     runs-on: ubuntu-latest
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      
+
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      
+
       - name: Install dependencies
         run: |
           uv venv
           source .venv/bin/activate
           uv pip install -e .
-      
+
       - name: Send daily email
         env:
           RAINDROP_TOKEN: ${{ secrets.RAINDROP_TOKEN }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
           DAILY_MIKU_OPERATOR: github-actions
-          DAILY_MIKU_EMAIL_FROM: ${{ secrets.DAILY_MIKU_EMAIL_FROM }}
-          DAILY_MIKU_EMAIL_RECIPIENTS: ${{ secrets.DAILY_MIKU_EMAIL_RECIPIENTS }}
+          DAILY_MIKU_EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          DAILY_MIKU_EMAIL_RECIPIENTS: ${{ secrets.EMAIL_TO }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USER }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
         run: |
           source .venv/bin/activate
           daily-miku email send --json
-      
+
       - name: Log result
         if: always()
         run: echo "Daily Miku email sent"
