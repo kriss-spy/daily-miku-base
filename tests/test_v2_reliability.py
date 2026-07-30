@@ -43,9 +43,7 @@ def test_health_is_live_while_readiness_exposes_safe_dependency_state() -> None:
 
 
 def test_selection_snapshot_cache_reuses_one_bounded_account_scan() -> None:
-    source = InMemoryContentSource(
-        (TaggedItem(1, tags=("daily-miku-2026-07-19",)),)
-    )
+    source = InMemoryContentSource((TaggedItem(1, tags=("daily-miku-2026-07-19",)),))
     services = build_services(
         Settings.in_memory(),
         clock=FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),

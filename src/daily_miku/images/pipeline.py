@@ -202,7 +202,9 @@ class ImagePipeline:
             if item.cover_identity:
                 # Direct-cover: redirect to the Raindrop cover URL when no controlled
                 # image is available. Controlled images remain preferred when present.
-                return ImageResolution(ImageResolutionKind.REDIRECT, item.cover_identity)
+                return ImageResolution(
+                    ImageResolutionKind.REDIRECT, item.cover_identity
+                )
             return ImageResolution(ImageResolutionKind.NO_IMAGE)
         except ContentDependencyError as exc:
             kind = {

@@ -260,20 +260,14 @@ class SlotCatalog:
         )
         if invalid_days:
             invalid_day = invalid_days[0]
-            raise MultiDateAssignment(
-                invalid_day, snapshot.invalid_by_day[invalid_day]
-            )
+            raise MultiDateAssignment(invalid_day, snapshot.invalid_by_day[invalid_day])
         bounded = {
             day: items
             for day, items in snapshot.by_day.items()
             if first_day <= day <= last_day
         }
-        selected = sum(
-            len(items) == 1 for items in bounded.values()
-        )
-        conflicts = sum(
-            len(items) > 1 for items in bounded.values()
-        )
+        selected = sum(len(items) == 1 for items in bounded.values())
+        conflicts = sum(len(items) > 1 for items in bounded.values())
         calendar_days = (last_date - first_date).days + 1
         return SlotStatistics(
             first_date,

@@ -64,7 +64,10 @@ class SelectionSnapshot:
             if len(days) > 1:
                 assignment = MultiDateBookmark(
                     item.raindrop_id,
-                    tuple(f"{DATED_SELECTION_PREFIX}{day.value.isoformat()}" for day in days),
+                    tuple(
+                        f"{DATED_SELECTION_PREFIX}{day.value.isoformat()}"
+                        for day in days
+                    ),
                 )
                 for day in days:
                     invalid[day].append(assignment)

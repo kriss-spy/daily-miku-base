@@ -120,9 +120,7 @@ def test_every_catalog_operation_uses_one_complete_snapshot() -> None:
 
 def test_snapshot_cache_expires_and_never_caches_failed_refreshes() -> None:
     current = 0.0
-    source = InMemoryContentSource(
-        (TaggedItem(4, tags=("daily-miku-2026-07-19",)),)
-    )
+    source = InMemoryContentSource((TaggedItem(4, tags=("daily-miku-2026-07-19",)),))
     snapshots = SelectionSnapshotCache(source, 10, timer=lambda: current)
 
     assert snapshots.get() is snapshots.get()

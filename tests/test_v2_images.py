@@ -94,9 +94,7 @@ def image_pipeline(
             TaggedItem(8, tags=("daily-miku-2026-07-18",), title="Eight")
         )
     source = InMemoryContentSource(tuple(selected_items))
-    catalog = SlotCatalog(
-        Calendar.named("Asia/Shanghai"), FixedClock(NOW), source
-    )
+    catalog = SlotCatalog(Calendar.named("Asia/Shanghai"), FixedClock(NOW), source)
     pipeline = ImagePipeline(
         catalog,
         repository,

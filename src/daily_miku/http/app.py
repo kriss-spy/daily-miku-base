@@ -171,9 +171,7 @@ def create_app(
             headers={"Cache-Control": "no-store"},
         )
 
-    def multi_date_response(
-        request: Request, exc: MultiDateAssignment
-    ) -> JSONResponse:
+    def multi_date_response(request: Request, exc: MultiDateAssignment) -> JSONResponse:
         return error_response(
             request,
             409,
@@ -233,8 +231,7 @@ def create_app(
         try:
             checks["schema"] = (
                 "ok"
-                if resolved_services.schema_version()
-                == expected_schema_version()
+                if resolved_services.schema_version() == expected_schema_version()
                 else "failed"
             )
         except Exception:

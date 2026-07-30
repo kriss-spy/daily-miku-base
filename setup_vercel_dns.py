@@ -58,7 +58,7 @@ def setup_vercel_dns():
     ]
 
     try:
-        result = nc.domains.dns.set_hosts(domain, hosts)
+        nc.domains.dns.set_hosts(domain, hosts)
         print("\n✅ DNS records updated successfully!")
         print("\n📝 New DNS Configuration:")
         print("  A      @               → 76.76.21.21")
