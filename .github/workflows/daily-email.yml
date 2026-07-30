@@ -4,7 +4,12 @@ on:
   schedule:
     # Run every day at 04:00 UTC (12:00 PM Beijing time, UTC+8)
     - cron: '0 4 * * *'
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Date to send (YYYY-MM-DD, leave empty for today)'
+        required: false
+        type: string
 
 jobs:
   send_daily_email:
@@ -42,7 +47,11 @@ jobs:
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
         run: |
           source .venv/bin/activate
-          daily-miku email send --json
+          if [ -n "${{ github.event.inputs.date }}" ]; then
+            daily-miku email send --date ${{ github.event.inputs.date }} --json
+          else
+            daily-miku email send --json
+          fi
 
       - name: Log result
         if: always()
