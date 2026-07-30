@@ -6,7 +6,7 @@ from datetime import datetime
 import pytest
 
 from daily_miku import cli, main
-from daily_miku.config import InitializationSettings, LegacyInitializationSettings
+from daily_miku.config import InitializationSettings
 from daily_miku.selection_initialize import (
     InMemorySelectionTagStore,
     SelectionTagInitializer,
@@ -18,21 +18,11 @@ pytestmark = pytest.mark.unit
 
 def test_initialization_settings_do_not_require_database() -> None:
     settings = InitializationSettings.from_environment(
-        RAINDROP_TOKEN="token", _env_file=None
+        RAINDROP_TOKEN="token", DATABASE_URL=None, _env_file=None
     )
 
     assert settings.database_url is None
     assert settings.timezone_name == "Asia/Shanghai"
-
-
-def test_legacy_initialization_settings_retain_database_configuration() -> None:
-    settings = LegacyInitializationSettings.from_environment(
-        RAINDROP_TOKEN="token",
-        DATABASE_URL="postgresql://legacy",
-        _env_file=None,
-    )
-
-    assert settings.database_url.get_secret_value() == "postgresql://legacy"
 
 
 def test_selection_initialize_json_output(capsys: pytest.CaptureFixture[str]) -> None:

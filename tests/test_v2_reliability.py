@@ -9,7 +9,6 @@ from daily_miku.config import Settings
 from daily_miku.content_source import InMemoryContentSource, ScanStatus, TaggedItem
 from daily_miku.domain import FixedClock
 from daily_miku.http import create_app
-from daily_miku.ledger.memory import InMemoryLedger
 from daily_miku.reliability import RateLimiter
 from daily_miku.services import build_services
 
@@ -18,20 +17,19 @@ pytestmark = pytest.mark.unit
 
 def reliability_client(
     *, source_status: ScanStatus = ScanStatus.COMPLETE
-) -> tuple[TestClient, InMemoryLedger]:
-    ledger = InMemoryLedger()
+) -> TestClient:
     services = build_services(
         Settings.in_memory(),
         clock=FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
-        ledger=ledger,
+        in_memory=True,
         content_source=InMemoryContentSource(status=source_status),
     )
-    return TestClient(create_app(services=services)), ledger
+    return TestClient(create_app(services=services))
 
 
 def test_health_is_live_while_readiness_exposes_safe_dependency_state() -> None:
-    ready, _ = reliability_client()
-    unavailable, _ = reliability_client(source_status=ScanStatus.INCOMPLETE)
+    ready = reliability_client()
+    unavailable = reliability_client(source_status=ScanStatus.INCOMPLETE)
 
     assert ready.get("/health").json() == {"status": "ok"}
     healthy = ready.get("/ready")
@@ -76,7 +74,7 @@ def test_rate_limiter_has_retry_after_and_recovers_after_window() -> None:
 
 
 def test_http_rate_limit_preserves_request_correlation() -> None:
-    client, _ = reliability_client()
+    client = reliability_client()
     client.app.state.rate_limiter = RateLimiter(public_limit=1)
 
     assert client.get("/health").status_code == 200

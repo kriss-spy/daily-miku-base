@@ -24,7 +24,7 @@ def test_connection():
         print("✅ Namecheap client initialized")
         print(f"   Username: {os.getenv('NAMECHEAP_USERNAME')}")
         print(f"   Client IP: {os.getenv('NAMECHEAP_CLIENT_IP')}")
-        print(f"   Sandbox mode: False")
+        print("   Sandbox mode: False")
         print()
 
         # Test API by listing domains

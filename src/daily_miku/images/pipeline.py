@@ -200,9 +200,9 @@ class ImagePipeline:
                 )
             item = resolved_slot.items[0]
             if item.cover_identity:
-                # Legacy covers are not trusted or imported automatically. Without a
-                # validated mirror, an upstream candidate is a 502 rather than bytes.
-                return ImageResolution(ImageResolutionKind.UPSTREAM)
+                # Direct-cover: redirect to the Raindrop cover URL when no controlled
+                # image is available. Controlled images remain preferred when present.
+                return ImageResolution(ImageResolutionKind.REDIRECT, item.cover_identity)
             return ImageResolution(ImageResolutionKind.NO_IMAGE)
         except ContentDependencyError as exc:
             kind = {

@@ -6,7 +6,6 @@ from pydantic import ValidationError
 from daily_miku.config import (
     ConfigurationError,
     InitializationSettings,
-    LedgerSettings,
     Settings,
 )
 
@@ -23,23 +22,20 @@ def test_initialization_settings_require_only_database_and_raindrop() -> None:
     assert settings.database_url.get_secret_value() == "postgresql://example"
 
 
-def test_ledger_settings_require_only_correction_configuration() -> None:
-    settings = LedgerSettings.from_environment(
-        DAILY_MIKU_OPERATOR="operator",
-        DATABASE_URL="postgresql://ledger",
-        _env_file=None,
-    )
-
-    assert settings.operator == "operator"
-    assert settings.database_url.get_secret_value() == "postgresql://ledger"
-
-
-def test_settings_apply_defaults_and_parse_recipients() -> None:
+def test_settings_apply_defaults_and_parse_recipients(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for key in (
+        "DAILY_MIKU_EMAIL_RECIPIENTS",
+        "DAILY_MIKU_EMAIL_FROM",
+        "DAILY_MIKU_OPERATOR",
+    ):
+        monkeypatch.delenv(key, raising=False)
     values = Settings.in_memory().model_dump()
     values["email_recipients_value"] = (
         " first@example.com,second@example.com,first@example.com "
     )
-    settings = Settings(**values)
+    settings = Settings(**values, _env_file=None)
 
     assert settings.timezone_name == "Asia/Shanghai"
     assert "tag" not in Settings.model_fields
@@ -87,6 +83,19 @@ def test_environment_failure_names_fields_without_exposing_secrets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     secret = "credential-that-must-not-leak"
+    # Clear any existing v2 environment variables to isolate the test
+    for key in (
+        "DAILY_MIKU_OPERATOR",
+        "DAILY_MIKU_EMAIL_FROM",
+        "DAILY_MIKU_EMAIL_RECIPIENTS",
+        "DAILY_MIKU_TIMEZONE",
+        "SMTP_HOST",
+        "SMTP_USERNAME",
+        "SMTP_PASSWORD",
+        "DATABASE_URL",
+        "RAINDROP_TOKEN",
+    ):
+        monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("RAINDROP_TOKEN", secret)
 
     with pytest.raises(ConfigurationError) as caught:

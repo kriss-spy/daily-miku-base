@@ -20,7 +20,7 @@ from .domain import Calendar, FutureSelectionDay, SystemClock
 from .delivery import DeliveryBlocked, DeliveryDependencyError
 from .doctor import build_doctor
 from .images import ImageBlocked, ImageDependencyError, ImagePipeline
-from .images.blob import VercelBlobStore
+from .images.blob import BlobStore, InMemoryBlobStore, VercelBlobStore
 from .images.publisher import RaindropCoverPublisher
 from .images.store import PostgresImageRepository
 from .ledger.database import postgres_connections
@@ -468,12 +468,17 @@ def _configured_image_pipeline(settings: ImageSettings) -> ImagePipeline:
     source = RaindropContentSource(
         settings.raindrop_token.get_secret_value(), "daily-miku"
     )
+    blob_store: BlobStore = (
+        InMemoryBlobStore()
+        if settings.blob_read_write_token is None
+        else VercelBlobStore(settings.blob_read_write_token.get_secret_value())
+    )
     return ImagePipeline(
         SlotCatalog(calendar, clock, source),
         PostgresImageRepository.from_url(
             settings.database_url.get_secret_value(), local_pool=not settings.serverless
         ),
-        VercelBlobStore(settings.blob_read_write_token.get_secret_value()),
+        blob_store,
         RaindropCoverPublisher(settings.raindrop_token.get_secret_value()),
         clock,
         settings.operator,

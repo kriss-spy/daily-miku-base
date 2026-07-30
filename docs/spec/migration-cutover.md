@@ -49,16 +49,17 @@ Initialization does not rerun after its verified production apply. Later selecti
 
 ## Image Readiness
 
-The initializer or a companion migration command evaluates every legacy selected Slot through the v2 image policy. Each receives one reviewed classification:
+The initializer or a companion migration command validates every legacy selected
+Slot cover directly through the v2 image policy. Each cover receives one reviewed
+validation: a direct cover requires a `2xx` response, `image/*` content type, and
+a valid decode.
 
-- A validated controlled Blob mirror is ready.
-- The selected bookmark intentionally has no image.
-- The image is confirmed withdrawn.
-- The upstream image cannot be authorized, validated, or fetched and the resulting v2 failure is explicitly accepted.
+An unvalidated cover blocks cutover. This rule makes unknown failures
+unacceptable without pretending every historical Pixiv, X, or other upstream
+image can be made deliverable.
 
-An unclassified image blocks cutover. A reviewed exception does not. This rule makes unknown failures unacceptable without pretending every historical Pixiv, X, or other upstream image can be made deliverable.
-
-For each controlled mirror, verify content type from decoded bytes, content-addressed naming, immutable object caching, and a successful `307` from `/image/{date}`. For each exception, verify the exact v2 status from the HTTP contract. Never use v1's proxied bytes as trusted migration input.
+Validate cover evidence with `verify_cover_evidence`. Never use v1's proxied
+bytes as trusted migration input.
 
 ## Verification Gates
 
@@ -67,7 +68,8 @@ Cutover is blocked until all of these gates pass on the protected preview:
 - Automated tests, lint, type checks, SQL migrations, and configuration validation pass using the release artifact.
 - Current Dated Selection Tags exactly match the approved migration report and a repeated apply is a no-op.
 - Every legacy conflict and duplicate warning has a recorded operator decision.
-- Every legacy selected Slot has a reviewed image classification.
+- Every legacy selected Slot has a reviewed direct-cover validation (2xx,
+  image/*, valid decode).
 - All retained routes satisfy the v2 HTTP contract across selected, empty, conflict, malformed, future, and dependency-failure cases.
 - Every v1-addressable date resolves to the same Raindrop ID in v2 unless a recorded correction or accepted conflict intentionally changes it.
 - The CLI reads the same Slot states as HTTP, `doctor` passes, and email dry-run/precondition checks cannot send mail.
@@ -83,7 +85,7 @@ Byte-for-byte HTML, JSON, or image parity with v1 is not a gate. V2 preserves th
 2. Disable the v1 email workflow before its send and verify no v1 invocation remains in progress.
 3. Begin the brief selection freeze and capture the final baseline manifest plus a current Dated Selection Tag validation report.
 4. Verify the completed initialization record against current Raindrop tags. Do not rederive dates from the post-initialization `lastUpdate` values.
-5. Complete the final image classification and retained-route checks against preview.
+5. Complete the final direct-cover validation and retained-route checks against preview.
 6. Apply production migrations and promote the verified v2 release with all public routes switched together. V2 schedules remain disabled.
 7. Smoke-test `/`, one selected dated page, one empty Slot, `/archive`, one JSON Slot, `/health`, and representative `/image/{date}` success and failure outcomes on `dailymiku.dev`.
 8. Run one complete selection validation. Verify exact manifest agreement and an identical repeat.

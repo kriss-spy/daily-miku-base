@@ -79,3 +79,17 @@
 - **Static assets**: Images served via CDN, templates rendered server-side
 - **CI/CD**: GitHub Actions workflow runs tests and coverage on push/PR
 - **Environment**: Production uses environment variables, never commit secrets
+
+## Agent skills
+
+### Issue tracker
+
+Issues and planning artifacts live in this repository's GitHub Issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the standard five-role triage label vocabulary. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context repository. See `docs/agents/domain.md`.

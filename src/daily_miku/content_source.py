@@ -161,7 +161,7 @@ class RaindropContentSource:
     timeout: float = 10.0
 
     def scan_tagged(self) -> TaggedScan:
-        """Fetch all bookmarks and retain every selection-prefix tag locally."""
+        """Search Raindrop for selection-prefix matches and verify pagination."""
         discovered: dict[int, TaggedItem] = {}
         expected_count: int | None = None
         page = 0
@@ -172,6 +172,7 @@ class RaindropContentSource:
                     f"{BASE_URL}/raindrops/0",
                     headers={"Authorization": f"Bearer {self.token}"},
                     params={
+                        "search": self.tag,
                         "perpage": PAGE_SIZE,
                         "page": page,
                     },

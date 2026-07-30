@@ -54,7 +54,6 @@ def build_services(
     clock: Clock | None = None,
     in_memory: bool = False,
     schema_version: Callable[[], int] | None = None,
-    ledger: object | None = None,
     content_source: ContentSource | None = None,
     image_repository: ImageRepository | None = None,
     blob_store: BlobStore | None = None,
@@ -63,9 +62,6 @@ def build_services(
     mailer: Mailer | None = None,
 ) -> Services:
     """Build the v2 service graph, with optional adapters for isolated tests."""
-    # ``ledger`` is accepted only as a test-fixture signal while older tests are
-    # migrated; it is never stored, queried, or constructed by this composition.
-    in_memory = in_memory or ledger is not None
     resolved_clock = clock or SystemClock()
     calendar = Calendar.named(settings.timezone_name)
     resolved_schema_version = schema_version or (
@@ -89,7 +85,7 @@ def build_services(
         )
     resolved_blob_store = blob_store or (
         InMemoryBlobStore()
-        if in_memory
+        if in_memory or settings.blob_read_write_token is None
         else VercelBlobStore(settings.blob_read_write_token.get_secret_value())
     )
     resolved_cover_publisher = cover_publisher or (

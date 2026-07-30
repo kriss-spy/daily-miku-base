@@ -75,7 +75,7 @@ Complete the public v2 contract, prove it in production-shaped preview infrastru
 - Implement archive, search, and statistics Catalog behavior; archive and search JSON APIs; `/archive` and `/search`; and `archive list` CLI behavior.
 - Finish the editorial archive grid, bounded month/range empty-state context, cursor behavior, conflict cards, and progressive enhancement.
 - Add health and readiness behavior, dated-tag validation reporting, structured dependency failures, request correlation, cache validators, bounded rate limits, and operational dashboards or alerts sufficient to enforce the release gates.
-- Export and checksum the baseline manifest, apply reviewed Dated Selection Tags to legacy bookmarks, classify every legacy image, and record decisions for conflicts, duplicate identities, tag corrections, and image exceptions.
+- Export and checksum the baseline manifest, apply reviewed Dated Selection Tags to legacy bookmarks, validate every legacy cover directly, and record decisions for conflicts, duplicate identities, tag corrections, and cover outcomes.
 - Replace setup, API, CLI, email, deployment, logging, and operational documentation with v2 instructions and complete the cutover and recovery runbooks.
 - Remove v1 handlers, alternate route implementations, obsolete dependencies, old command wiring, and the v1 email workflow in the promoted release artifact.
 - Execute every gate and cutover step in the migration specification. Skip cutover-day email and enable the v2 email schedule only after production smoke checks and a complete tag validation succeed.
@@ -86,8 +86,8 @@ Complete the public v2 contract, prove it in production-shaped preview infrastru
 - All public HTML, JSON, CLI, image, and email contracts pass against the protected preview with production-shaped isolated dependencies.
 - Complete dated-tag scans return current assignments without a database synchronization interval; alerts distinguish incomplete scans, malformed tags, multi-date assignments, and dependency failures.
 - Every v1-addressable date resolves to the same Raindrop ID unless a recorded correction or accepted conflict intentionally changes it.
-- Every legacy selected Slot separately has a reviewed image classification or image exception; an image exception never excuses a selection mismatch.
-- Tag migration apply is idempotent and resumable, the operational schema version is verified, every legacy selected Slot has an image classification, and no unreviewed warning remains.
+- Every legacy selected Slot separately has a reviewed direct-cover validation; an invalid cover never excuses a selection mismatch.
+- Tag migration apply is idempotent and resumable, the operational schema version is verified, every legacy selected Slot has a direct-cover validation, and no unreviewed warning remains.
 - Production configuration, pooled operational Postgres access, Blob access, SMTP, logs, monitoring, and a schema-compatible v2 recovery deployment are ready.
 - Atomic promotion and all production smoke checks succeed; repeated complete validation is safe; tagging resumes; the next scheduled v2 email creates durable outcomes.
 - V2 is the only deployed implementation and active workflow. Recovery uses a compatible v2 deployment or a fix forward, never v1.

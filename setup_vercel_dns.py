@@ -29,7 +29,7 @@ def setup_vercel_dns():
     print(f"🔍 Checking current DNS records for {domain}...")
     try:
         current_records = nc.domains.dns.get_hosts(domain)
-        print(f"\n📋 Current DNS Records:")
+        print("\n📋 Current DNS Records:")
         for record in current_records:
             rec_type = record.get("Type", record.get("@Type", "?"))
             rec_name = record.get("Name", record.get("@Name", "?"))
@@ -39,9 +39,9 @@ def setup_vercel_dns():
         print(f"⚠️  Could not fetch current records: {e}")
         current_records = []
 
-    print(f"\n🔧 Configuring DNS for Vercel...")
+    print("\n🔧 Configuring DNS for Vercel...")
     print(f"   Domain: {domain}")
-    print(f"   Target: cname.vercel-dns.com")
+    print("   Target: cname.vercel-dns.com")
 
     # Configure DNS for Vercel
     # Vercel requires:
@@ -59,26 +59,26 @@ def setup_vercel_dns():
 
     try:
         result = nc.domains.dns.set_hosts(domain, hosts)
-        print(f"\n✅ DNS records updated successfully!")
-        print(f"\n📝 New DNS Configuration:")
-        print(f"  A      @               → 76.76.21.21")
-        print(f"  CNAME  www             → cname.vercel-dns.com")
+        print("\n✅ DNS records updated successfully!")
+        print("\n📝 New DNS Configuration:")
+        print("  A      @               → 76.76.21.21")
+        print("  CNAME  www             → cname.vercel-dns.com")
 
-        print(f"\n⏳ DNS propagation can take 5-30 minutes")
+        print("\n⏳ DNS propagation can take 5-30 minutes")
         print(f"   You can check status with: dig {domain}")
-        print(f"\n🎯 Next Steps:")
-        print(f"   1. Wait for DNS propagation")
-        print(f"   2. Verify in Vercel dashboard that the domain is active")
+        print("\n🎯 Next Steps:")
+        print("   1. Wait for DNS propagation")
+        print("   2. Verify in Vercel dashboard that the domain is active")
         print(f"   3. Test: https://{domain}")
 
     except Exception as e:
         print(f"\n❌ Error updating DNS: {e}")
-        print(f"\n💡 Manual Setup Instructions:")
+        print("\n💡 Manual Setup Instructions:")
         print(
             f"   1. Go to Namecheap dashboard: https://ap.www.namecheap.com/domains/domaincontrolpanel/{domain}"
         )
-        print(f"   2. Set A record: @ → 76.76.21.21")
-        print(f"   3. Set CNAME record: www → cname.vercel-dns.com")
+        print("   2. Set A record: @ → 76.76.21.21")
+        print("   3. Set CNAME record: www → cname.vercel-dns.com")
         return False
 
     return True

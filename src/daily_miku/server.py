@@ -2,7 +2,7 @@
 
 import os
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request

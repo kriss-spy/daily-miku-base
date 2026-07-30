@@ -18,7 +18,6 @@ from daily_miku.delivery import (
     ReservationKind,
 )
 from daily_miku.domain import FixedClock
-from daily_miku.ledger.memory import InMemoryLedger
 from daily_miku.main import main
 from daily_miku.services import build_services
 
@@ -56,7 +55,7 @@ def delivery_graph(*, recipients: str = "one@example.com,two@example.com"):
     services = build_services(
         settings,
         clock=FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
-        ledger=InMemoryLedger(),
+        in_memory=True,
         content_source=source,
         delivery_store=InMemoryDeliveryStore(),
         mailer=mailer,

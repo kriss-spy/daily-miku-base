@@ -38,7 +38,7 @@ pip install -e .
 
 1. Go to [Raindrop.io App Management](https://app.raindrop.io/settings/integrations)
 2. Create a new app → Copy the "Test Token"
-3. Tag your daily Miku bookmarks with `#daily-miku`
+3. Tag your daily Miku bookmarks with canonical dated tags: `#daily-miku-YYYY-MM-DD`
 
 ### Set Environment Variables
 
@@ -47,14 +47,16 @@ Create a `.env` file in the project root:
 ```bash
 # .env
 RAINDROP_TOKEN=your_test_token_here
-RAINDROP_TAG=daily-miku
+DAILY_MIKU_TIMEZONE=Asia/Shanghai
+DAILY_MIKU_OPERATOR=your-name
 ```
 
 Or export directly:
 
 ```bash
 export RAINDROP_TOKEN="your_test_token_here"
-export RAINDROP_TAG="daily-miku"
+export DAILY_MIKU_TIMEZONE="Asia/Shanghai"
+export DAILY_MIKU_OPERATOR="your-name"
 ```
 
 ## 4. Install Dependencies
@@ -92,17 +94,23 @@ Open: `http://localhost:8000`
 
 ## 6. CLI Usage
 
-The backend provides a CLI for testing:
+The v2 CLI operates on dated Selection Tags:
 
 ```bash
-# Fetch today's daily miku
-python -m src.daily_miku.main fetch-today
+# Read today's Daily Slot
+python -m src.daily_miku.main slot today
 
-# Fetch specific date
-python -m src.daily_miku.main fetch-date 2025-11-26
+# Read a specific date
+python -m src.daily_miku.main slot get 2025-11-26
 
-# Send test email
-python -m src.daily_miku.main send-email
+# List archive
+python -m src.daily_miku.main archive list
+
+# Run deployment diagnostics
+python -m src.daily_miku.main doctor
+
+# Send test email (disabled for protected preview)
+python -m src.daily_miku.main email send
 ```
 
 ## 7. Email Configuration (Optional)
@@ -164,7 +172,7 @@ pytest tests/
 
 **No images found**:
 
-- Verify bookmarks are tagged with `#daily-miku`
+- Verify bookmarks carry canonical dated tags like `#daily-miku-2025-11-26`
 - Check date format matches `YYYY-MM-DD`
 
 ## Next Steps

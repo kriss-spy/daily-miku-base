@@ -63,20 +63,6 @@ class DatabaseSettings(BaseSettings):
             ) from None
 
 
-class LedgerSettings(DatabaseSettings):
-    """Validate configuration required by correction commands."""
-
-    operator: str = Field(alias="DAILY_MIKU_OPERATOR")
-
-    @field_validator("operator")
-    @classmethod
-    def validate_operator(cls, value: str) -> str:
-        """Reject an empty audit identity."""
-        if not value.strip():
-            raise ValueError("must not be empty")
-        return value.strip()
-
-
 class InitializationSettings(BaseSettings):
     """Validate configuration for Raindrop dated-tag initialization.
 
@@ -127,29 +113,6 @@ class InitializationSettings(BaseSettings):
             ) from None
 
 
-class LegacyInitializationSettings(DatabaseSettings):
-    """Validate dependencies retained by the legacy ledger initializer."""
-
-    tag: str = Field("daily-miku", alias="DAILY_MIKU_TAG")
-    raindrop_token: SecretStr = Field(alias="RAINDROP_TOKEN")
-
-    @field_validator("tag")
-    @classmethod
-    def validate_tag(cls, value: str) -> str:
-        """Reject an empty Raindrop tag."""
-        if not value.strip():
-            raise ValueError("must not be empty")
-        return value.strip()
-
-    @field_validator("raindrop_token")
-    @classmethod
-    def validate_raindrop_token(cls, value: SecretStr) -> SecretStr:
-        """Reject an empty Raindrop credential."""
-        if not value.get_secret_value().strip():
-            raise ValueError("must not be empty")
-        return value
-
-
 class ImageSettings(DatabaseSettings):
     """Validate only dependencies required by image operator commands."""
 
@@ -184,7 +147,7 @@ class Settings(DatabaseSettings):
     email_from: str = Field(alias="DAILY_MIKU_EMAIL_FROM")
     email_recipients_value: str = Field(alias="DAILY_MIKU_EMAIL_RECIPIENTS")
     raindrop_token: SecretStr = Field(alias="RAINDROP_TOKEN")
-    blob_read_write_token: SecretStr = Field(alias="BLOB_READ_WRITE_TOKEN")
+    blob_read_write_token: SecretStr | None = Field(None, alias="BLOB_READ_WRITE_TOKEN")
     smtp_host: str = Field(alias="SMTP_HOST")
     smtp_port: int = Field(587, alias="SMTP_PORT", ge=1, le=65535)
     smtp_username: str = Field(alias="SMTP_USERNAME")
@@ -200,13 +163,20 @@ class Settings(DatabaseSettings):
 
     @field_validator(
         "raindrop_token",
-        "blob_read_write_token",
         "smtp_password",
     )
     @classmethod
     def validate_nonempty_secret(cls, value: SecretStr) -> SecretStr:
         """Reject required credentials that are present but empty."""
         if not value.get_secret_value().strip():
+            raise ValueError("must not be empty")
+        return value
+
+    @field_validator("blob_read_write_token")
+    @classmethod
+    def validate_optional_secret(cls, value: SecretStr | None) -> SecretStr | None:
+        """Reject an optional credential that is present but empty."""
+        if value is not None and not value.get_secret_value().strip():
             raise ValueError("must not be empty")
         return value
 

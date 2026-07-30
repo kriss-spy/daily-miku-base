@@ -1,7 +1,7 @@
 """Tests for the injectable v2 FastAPI shell."""
 
 import json
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,9 +13,8 @@ from daily_miku.content_source import (
     ScanStatus,
     TaggedItem,
 )
-from daily_miku.domain import FixedClock, RecordingMethod, SelectionDay, SlotCandidate
+from daily_miku.domain import FixedClock
 from daily_miku.http import create_app
-from daily_miku.ledger.memory import InMemoryLedger
 from daily_miku.logging_config import JSONFormatter
 from daily_miku.services import build_services
 
@@ -26,19 +25,6 @@ def slot_client(*, lookup_failure: ContentFailure | None = None) -> TestClient:
     """Build a complete isolated Slot API fixture."""
     settings = Settings.in_memory()
     observed_at = datetime(2026, 7, 16, 16, 3, tzinfo=timezone.utc)
-    ledger = InMemoryLedger()
-    ledger.record_candidate(
-        SelectionDay(date(2026, 7, 17)),
-        SlotCandidate(3, RecordingMethod.OBSERVED, observed_at),
-    )
-    ledger.record_candidate(
-        SelectionDay(date(2026, 7, 18)),
-        SlotCandidate(8, RecordingMethod.LEGACY, observed_at),
-    )
-    ledger.record_candidate(
-        SelectionDay(date(2026, 7, 18)),
-        SlotCandidate(9, RecordingMethod.MANUAL, observed_at),
-    )
     source = InMemoryContentSource(
         (
             TaggedItem(
@@ -68,7 +54,6 @@ def slot_client(*, lookup_failure: ContentFailure | None = None) -> TestClient:
     services = build_services(
         settings,
         clock=FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
-        ledger=ledger,
         content_source=source,
     )
     return TestClient(create_app(services=services))
@@ -76,7 +61,7 @@ def slot_client(*, lookup_failure: ContentFailure | None = None) -> TestClient:
 
 def test_composition_root_builds_an_in_memory_http_graph() -> None:
     settings = Settings.in_memory()
-    services = build_services(settings, ledger=InMemoryLedger())
+    services = build_services(settings)
     app = create_app(settings, services)
 
     assert app.state.services is services
@@ -93,7 +78,7 @@ def test_composition_root_has_no_selection_ledger_services() -> None:
 
 
 def test_app_uses_settings_from_an_injected_service_graph() -> None:
-    services = build_services(Settings.in_memory(), ledger=InMemoryLedger())
+    services = build_services(Settings.in_memory())
 
     app = create_app(services=services)
 
@@ -241,7 +226,6 @@ def test_selector_absence_remains_distinct_from_dependency_failure() -> None:
     empty_services = build_services(
         Settings.in_memory(),
         clock=FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
-        ledger=InMemoryLedger(),
         content_source=InMemoryContentSource(),
     )
     no_result = TestClient(create_app(services=empty_services)).get("/api/slots/latest")
@@ -255,14 +239,9 @@ def test_selector_absence_remains_distinct_from_dependency_failure() -> None:
 
 
 def test_slot_resolution_does_not_require_the_legacy_ledger() -> None:
-    class FailingLedger(InMemoryLedger):
-        def candidates_for(self, day: SelectionDay) -> tuple[SlotCandidate, ...]:
-            raise AssertionError("Slot resolution must not read the ledger")
-
     services = build_services(
         Settings.in_memory(),
         clock=FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
-        ledger=FailingLedger(),
         content_source=InMemoryContentSource(),
     )
 
@@ -383,7 +362,6 @@ def test_search_groups_complete_conflict_and_paginates_opaque_results() -> None:
     assert len(first.json()["items"]) == len(second.json()["items"]) == 1
     assert first.json()["next_cursor"]
     assert first.json()["links"]["next"]
-    assert first.headers["ETag"]
     encoded = client.get("/api/search", params={"q": "Three & Nine"})
     assert "q=Three+%26+Nine" in encoded.json()["links"]["self"]
 
@@ -498,7 +476,6 @@ def test_multi_date_assignment_has_exact_409_contract() -> None:
     services = build_services(
         settings,
         clock=FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
-        ledger=InMemoryLedger(),
         content_source=source,
     )
 

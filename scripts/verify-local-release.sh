@@ -15,7 +15,6 @@ uv run --python 3.13 --extra dev ruff check \
   src/daily_miku/ledger \
   src/daily_miku/logging_config.py \
   src/daily_miku/main.py \
-  src/daily_miku/migration_baseline.py \
   src/daily_miku/reliability.py \
   src/daily_miku/selections.py \
   src/daily_miku/services.py \

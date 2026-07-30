@@ -26,7 +26,7 @@ Record, without secrets:
 - baseline manifest checksum and schema version;
 - `doctor`, `selection validate`, `/health`, `/ready`, request-correlation, cache, and rate-limit results;
 - selected, empty, conflict, malformed, future, and dependency-failure HTML/JSON outcomes;
-- every retained v1 date and controlled-image or approved exception outcome;
+- every retained v1 date and direct-cover validation outcome (2xx, image/*, valid decode);
 - repeated complete dated-tag scan outcomes, including malformed and multi-date fixtures;
 - email precondition checks using fake or explicitly isolated recipients, with no unintended mail;
 - monitoring test-channel signals for endpoint, scheduler, image, and email failures;
