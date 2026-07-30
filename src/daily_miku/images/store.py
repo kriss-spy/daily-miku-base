@@ -1,5 +1,6 @@
 """Image provenance and withdrawal repository contracts and adapters."""
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from threading import Lock
@@ -13,6 +14,8 @@ from ..ledger.database import (
     DatabaseConnection,
     postgres_connections,
 )
+
+logger = logging.getLogger("daily_miku.images.store")
 
 
 class ImageStoreDependencyError(RuntimeError):
@@ -283,6 +286,12 @@ class PostgresImageRepository:
             with self.connection_factory() as connection:
                 row = connection.execute(query, (raindrop_id,)).fetchone()
         except (psycopg.Error, PoolTimeout) as exc:
+            logger.warning(
+                "active_for failed for raindrop_id=%s: %s",
+                raindrop_id,
+                exc,
+                exc_info=True,
+            )
             raise ImageStoreDependencyError("Could not read image metadata") from exc
         return ImageProvenance(*row) if row is not None else None
 
@@ -296,6 +305,12 @@ class PostgresImageRepository:
                     (raindrop_id,),
                 ).fetchone()
         except (psycopg.Error, PoolTimeout) as exc:
+            logger.warning(
+                "withdrawal_for failed for raindrop_id=%s: %s",
+                raindrop_id,
+                exc,
+                exc_info=True,
+            )
             raise ImageStoreDependencyError("Could not read image withdrawal") from exc
         return ImageWithdrawal(*row) if row is not None else None
 

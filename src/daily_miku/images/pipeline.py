@@ -1,5 +1,6 @@
 """Deep module for controlled image mutations and dated resolution."""
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import date
@@ -22,6 +23,8 @@ from .store import (
     ImageWithdrawal,
 )
 from .validate import UnsafeImage, normalize_raster
+
+logger = logging.getLogger("daily_miku.images.pipeline")
 
 T = TypeVar("T")
 
@@ -184,6 +187,7 @@ class ImagePipeline:
         self, day: date, *, slot: CatalogSlot | None = None
     ) -> ImageResolution:
         """Resolve one date without forwarding unvalidated upstream bytes."""
+        resolved_slot: CatalogSlot | None = None
         try:
             resolved_slot = slot or self.catalog.get_slot(day)
             if not resolved_slot.items:
@@ -213,7 +217,25 @@ class ImagePipeline:
                 ContentFailure.TIMEOUT: ImageResolutionKind.TIMEOUT,
             }[exc.kind]
             return ImageResolution(kind)
-        except ImageStoreDependencyError:
+        except ImageStoreDependencyError as exc:
+            # When the repository is unavailable, log the underlying cause and fall
+            # back to the direct Raindrop cover URL if the slot has one. This avoids
+            # returning 503 for dates that only need the upstream cover.
+            logger.warning(
+                "Image repository unavailable for %s: %s",
+                day.isoformat(),
+                exc,
+                exc_info=True,
+            )
+            if (
+                resolved_slot is not None
+                and resolved_slot.items
+                and resolved_slot.items[0].cover_identity
+            ):
+                return ImageResolution(
+                    ImageResolutionKind.REDIRECT,
+                    resolved_slot.items[0].cover_identity,
+                )
             return ImageResolution(ImageResolutionKind.UNAVAILABLE)
 
     def _retry(self, operation: Callable[[], T]) -> T:
