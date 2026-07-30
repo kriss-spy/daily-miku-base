@@ -2,11 +2,15 @@
 
 ## Daily Miku
 
-A Raindrop bookmark selected for daily publication by manually adding the `daily-miku` tag. The bookmark may be new or may have existed before selection.
+A Raindrop bookmark selected for one Daily Slot by carrying exactly one valid Dated Selection Tag. The bookmark may be new or may have existed before selection.
 
 ## Selection Day
 
-The calendar day on which the `daily-miku` tag is added to a bookmark, interpreted in the configured calendar timezone. This, rather than the bookmark's original creation day, assigns a Daily Miku to a day. The default calendar timezone is `Asia/Shanghai`.
+The calendar date encoded in a Daily Miku's Dated Selection Tag. It identifies the Daily Slot and does not claim when the tag was added; the bookmark's creation and update timestamps do not affect it.
+
+## Dated Selection Tag
+
+The canonical Raindrop tag `daily-miku-YYYY-MM-DD`, with a strict, zero-padded Gregorian date. It is the authoritative Selection Day; a bookmark carrying multiple Dated Selection Tags is invalid until corrected.
 
 ## Daily Slot
 
@@ -18,7 +22,7 @@ The outcome of sending one selected Daily Miku for one Daily Slot to one configu
 
 ## Selection Correction
 
-An audited operator change to a recorded Selection Day when reliable historical evidence supersedes a legacy or observed approximation. It preserves the former value, new value, reason, operator, and time of change.
+An operator change that replaces a Daily Miku's Dated Selection Tag. It changes current publication state; Raindrop does not provide a durable history of the former tag, operator, or time of change.
 
 ## Image Withdrawal
 

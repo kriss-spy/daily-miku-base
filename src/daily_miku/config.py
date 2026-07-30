@@ -63,33 +63,31 @@ class DatabaseSettings(BaseSettings):
             ) from None
 
 
-class LedgerSettings(DatabaseSettings):
-    """Validate configuration required by correction commands."""
+class InitializationSettings(BaseSettings):
+    """Validate configuration for Raindrop dated-tag initialization.
 
-    operator: str = Field(alias="DAILY_MIKU_OPERATOR")
+    ``database_url`` remains an optional compatibility field for callers that
+    used this settings name before initialization moved out of Postgres.
+    """
 
-    @field_validator("operator")
-    @classmethod
-    def validate_operator(cls, value: str) -> str:
-        """Reject an empty audit identity."""
-        if not value.strip():
-            raise ValueError("must not be empty")
-        return value.strip()
+    model_config = SettingsConfigDict(
+        env_file=".env", extra="ignore", populate_by_name=True
+    )
 
-
-class InitializationSettings(DatabaseSettings):
-    """Validate only dependencies used by legacy initialization."""
-
-    tag: str = Field("daily-miku", alias="DAILY_MIKU_TAG")
+    timezone_name: str = Field("Asia/Shanghai", alias="DAILY_MIKU_TIMEZONE")
     raindrop_token: SecretStr = Field(alias="RAINDROP_TOKEN")
+    database_url: SecretStr | None = Field(None, alias="DATABASE_URL")
+    tag: str = Field("daily-miku", alias="DAILY_MIKU_TAG")
 
-    @field_validator("tag")
+    @field_validator("timezone_name")
     @classmethod
-    def validate_tag(cls, value: str) -> str:
-        """Reject an empty Raindrop tag."""
-        if not value.strip():
-            raise ValueError("must not be empty")
-        return value.strip()
+    def validate_timezone(cls, value: str) -> str:
+        """Require a known IANA timezone."""
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError("unknown IANA timezone") from exc
+        return value
 
     @field_validator("raindrop_token")
     @classmethod
@@ -99,6 +97,21 @@ class InitializationSettings(DatabaseSettings):
             raise ValueError("must not be empty")
         return value
 
+    @classmethod
+    def from_environment(cls, **kwargs: Any) -> Self:
+        """Load settings and reduce validation failures to safe field names."""
+        try:
+            return cls(**kwargs)
+        except ValidationError as exc:
+            fields = set()
+            for error in exc.errors():
+                field_name = str(error["loc"][0])
+                field = cls.model_fields.get(field_name)
+                fields.add(str(field.alias) if field and field.alias else field_name)
+            raise ConfigurationError(
+                f"Invalid configuration fields: {', '.join(sorted(fields))}"
+            ) from None
+
 
 class ImageSettings(DatabaseSettings):
     """Validate only dependencies required by image operator commands."""
@@ -106,9 +119,8 @@ class ImageSettings(DatabaseSettings):
     operator: str = Field(alias="DAILY_MIKU_OPERATOR")
     raindrop_token: SecretStr = Field(alias="RAINDROP_TOKEN")
     blob_read_write_token: SecretStr = Field(alias="BLOB_READ_WRITE_TOKEN")
-    tag: str = Field("daily-miku", alias="DAILY_MIKU_TAG")
 
-    @field_validator("operator", "tag")
+    @field_validator("operator")
     @classmethod
     def validate_image_operator(cls, value: str) -> str:
         """Require an audit identity for image mutations."""
@@ -125,21 +137,23 @@ class ImageSettings(DatabaseSettings):
         return value
 
 
-class Settings(LedgerSettings):
+class Settings(DatabaseSettings):
     """Own all v2 application environment parsing and validation."""
 
-    tag: str = Field("daily-miku", alias="DAILY_MIKU_TAG")
-    reconcile_secret: SecretStr = Field(alias="DAILY_MIKU_RECONCILE_SECRET")
+    operator: str = Field(alias="DAILY_MIKU_OPERATOR")
+    selection_snapshot_ttl: float = Field(
+        30.0, alias="DAILY_MIKU_SELECTION_SNAPSHOT_TTL", ge=0, le=300
+    )
     email_from: str = Field(alias="DAILY_MIKU_EMAIL_FROM")
     email_recipients_value: str = Field(alias="DAILY_MIKU_EMAIL_RECIPIENTS")
     raindrop_token: SecretStr = Field(alias="RAINDROP_TOKEN")
-    blob_read_write_token: SecretStr = Field(alias="BLOB_READ_WRITE_TOKEN")
+    blob_read_write_token: SecretStr | None = Field(None, alias="BLOB_READ_WRITE_TOKEN")
     smtp_host: str = Field(alias="SMTP_HOST")
     smtp_port: int = Field(587, alias="SMTP_PORT", ge=1, le=65535)
     smtp_username: str = Field(alias="SMTP_USERNAME")
     smtp_password: SecretStr = Field(alias="SMTP_PASSWORD")
 
-    @field_validator("tag", "smtp_host", "smtp_username")
+    @field_validator("operator", "smtp_host", "smtp_username")
     @classmethod
     def validate_nonempty(cls, value: str) -> str:
         """Reject empty operational identifiers."""
@@ -148,15 +162,21 @@ class Settings(LedgerSettings):
         return value.strip()
 
     @field_validator(
-        "reconcile_secret",
         "raindrop_token",
-        "blob_read_write_token",
         "smtp_password",
     )
     @classmethod
     def validate_nonempty_secret(cls, value: SecretStr) -> SecretStr:
         """Reject required credentials that are present but empty."""
         if not value.get_secret_value().strip():
+            raise ValueError("must not be empty")
+        return value
+
+    @field_validator("blob_read_write_token")
+    @classmethod
+    def validate_optional_secret(cls, value: SecretStr | None) -> SecretStr | None:
+        """Reject an optional credential that is present but empty."""
+        if value is not None and not value.get_secret_value().strip():
             raise ValueError("must not be empty")
         return value
 
@@ -202,7 +222,6 @@ class Settings(LedgerSettings):
         """Create valid non-secret settings for isolated application tests."""
         return cls(
             DAILY_MIKU_OPERATOR="test-operator",
-            DAILY_MIKU_RECONCILE_SECRET="not-a-real-secret",
             DAILY_MIKU_EMAIL_FROM="sender@example.com",
             DAILY_MIKU_EMAIL_RECIPIENTS="recipient@example.com",
             RAINDROP_TOKEN="not-a-real-token",

@@ -8,8 +8,8 @@ Decision for [Design the v2 HTTP contracts](https://github.com/kriss-spy/daily-m
 - JSON endpoints use unversioned `/api/...` paths. There are no known consumers of the v1 JSON endpoints, so v2 does not preserve or redirect them.
 - `https://dailymiku.dev/image/<date>` is the only retained legacy HTTP path.
 - Domain states are successful representations, not transport failures. Empty and conflicting Daily Slots return JSON successfully and are never collapsed into a selected candidate.
-- Raindrop remains authoritative for current bookmark content. The Selection Ledger supplies Selection Day, recording method, and first-observed time.
-- All dates in paths and query parameters use the ISO 8601 `YYYY-MM-DD` calendar-date form and the configured calendar timezone.
+- Raindrop remains authoritative for current bookmark content and Selection Day through canonical `daily-miku-YYYY-MM-DD` tags. No database supplies or indexes selection dates.
+- All dates in paths, query parameters, and Dated Selection Tags use the ISO 8601 `YYYY-MM-DD` calendar-date form. The configured timezone determines "today", not the date encoded in a tag.
 
 ## HTML Routes
 
@@ -39,9 +39,8 @@ The browsing prototype may refine presentation and progressive enhancement, but 
       "source_url": "https://example.com/artwork/123",
       "image_url": "/image/2026-07-17",
       "domain": "example.com",
-      "tags": ["daily-miku"],
-      "recording_method": "observed",
-      "first_observed_at": "2026-07-16T16:03:00Z"
+      "tags": ["daily-miku-2026-07-17"],
+      "selection_tag": "daily-miku-2026-07-17"
     }
   ],
   "links": {
@@ -60,7 +59,9 @@ The browsing prototype may refine presentation and progressive enhancement, but 
 | `selected` | 1 | Exactly one Daily Miku occupies the date. |
 | `conflict` | 2 or more | Multiple candidates occupy the date and require operator resolution. |
 
-The API does not expose an upstream cover URL as its delivery contract. `image_url` points to Daily Miku's controlled date route. `recording_method` is `legacy`, `observed`, or `manual`; clients must not describe `legacy` or `observed` records as exact tag-add timestamps.
+The API does not expose an upstream cover URL as its delivery contract. `image_url` points to Daily Miku's controlled date route. `selection_tag` is the exact canonical tag that assigns the item to the Slot; the API does not claim when it was added.
+
+A bookmark carrying more than one canonical Dated Selection Tag is invalid and is excluded from normal Slot candidates. Requests for any date named by that assignment return `409` with `multi_date_assignment` details until the operator removes the extra tags. Prefix-matching malformed tags assign no Slot and are reported by `doctor` and `selection validate`.
 
 ## Slot Selectors
 
@@ -102,17 +103,17 @@ Ranges are bounded resources and are not cursor-paginated. Invalid or oversized 
 }
 ```
 
-The cursor is opaque to clients and identifies the next stable position in descending Selection Day order. A malformed or expired cursor returns `400`. Corrections to dates already passed by a cursor may change later page results; the API does not promise snapshot isolation across separate requests.
+The cursor is opaque to clients and contains a versioned Selection Day keyset. The next page contains only valid assignments older than the last emitted day, so adding, removing, or moving newer tags does not shift the page boundary. A malformed cursor returns `400`. Dated tag changes may still change later page results; the API does not promise snapshot isolation across separate Raindrop scans.
 
 ## Search
 
-`GET /api/search?q={query}&cursor={cursor}&limit={limit}` searches current Raindrop-authoritative content restricted to Raindrop IDs present in the Selection Ledger. Results are grouped into Slot representations so a matching conflict candidate does not hide the other occupants of its Daily Slot.
+`GET /api/search?q={query}&cursor={cursor}&limit={limit}` searches current Raindrop-authoritative content carrying a valid Dated Selection Tag. Results are grouped into Slot representations so a matching conflict candidate does not hide the other occupants of its Daily Slot.
 
 Search uses the same response envelope, cursor behavior, default limit, and maximum limit as the archive. A blank query or malformed cursor returns `400`. Search ordering is relevance-first with Selection Day descending as the deterministic tie-breaker.
 
 ## Statistics
 
-`GET /api/statistics?from={date}&to={date}` reports statistics for an inclusive bounded period. When omitted, the bounds default to the earliest ledger date and today.
+`GET /api/statistics?from={date}&to={date}` reports statistics for an inclusive bounded period. When omitted, the bounds default to the earliest valid dated tag and today.
 
 ```json
 {
@@ -180,9 +181,9 @@ Unexpected server errors return `500` with the standard error envelope and no in
 
 ## Caching
 
-- Dated Slot responses use short shared caching because manual corrections and reconciliation can change state.
+- Dated Slot responses use short shared caching because Dated Selection Tags can change in Raindrop.
 - Today, latest, random, search, and statistics responses use shorter caching or `no-store` where freshness or randomness requires it.
-- Historical range and archive responses may use bounded shared caching but are not declared immutable because manual corrections remain possible.
+- Historical range and archive responses may use bounded shared caching but are not declared immutable because Dated Selection Tags remain mutable.
 - Successful responses include validators where practical. Error caching follows the image-delivery decision: brief caching for stable `404` responses and `no-store` for dependency failures.
 
 ## Deprecation And Removal

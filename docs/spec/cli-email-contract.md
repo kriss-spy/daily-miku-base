@@ -20,10 +20,10 @@ The following commands are the supported v2 contract:
 | `daily-miku slot get DATE [--json]` | Read the Daily Slot for an ISO `YYYY-MM-DD` date. |
 | `daily-miku archive list [--cursor CURSOR] [--limit N] [--json]` | List non-empty Daily Slots newest-first. |
 | `daily-miku doctor [--json]` | Check configuration and every required dependency without changing data or sending email. |
-| `daily-miku email send [--date DATE] [--force] [--json]` | Reconcile current selections and deliver one date's selected Daily Miku. `DATE` defaults to today. |
-| `daily-miku ledger initialize [--apply] [--json]` | Dry-run or apply the one-time legacy Selection Ledger initialization. |
-| `daily-miku ledger reconcile [--json]` | Reconcile the complete current tagged set into the Selection Ledger. |
-| `daily-miku ledger correct RAINDROP_ID DATE --reason TEXT [--json]` | Apply one audited manual Selection Day correction. |
+| `daily-miku email send [--date DATE] [--force] [--json]` | Read current dated tags and deliver one date's selected Daily Miku. `DATE` defaults to today. |
+| `daily-miku selection validate [--json]` | Scan all dated selection tags and report malformed tags, multi-date assignments, Slot conflicts, and likely duplicate identities. |
+| `daily-miku selection initialize [--apply] [--json]` | Dry-run or apply the one-time replacement of generic tags with dated tags derived from current `lastUpdate`. |
+| `daily-miku selection set RAINDROP_ID DATE [--json]` | Replace a bookmark's current Dated Selection Tag with the canonical tag for `DATE`. |
 | `daily-miku image ingest RAINDROP_ID FILE --authorization-note TEXT [--json]` | Validate, normalize, and store operator-supplied authorized image bytes. |
 | `daily-miku image withdraw RAINDROP_ID --reason TEXT [--json]` | Record a withdrawal and stop controlled image delivery. |
 
@@ -31,9 +31,9 @@ The v1 names `fetch-today`, `fetch-date`, `test-connection`, `list`, and `send-e
 
 ## Operator Commands
 
-`ledger initialize` is dry-run by default. It completes a paginated scan, reports proposed legacy rows, conflicts, and duplicate identities, and writes only when `--apply` is present. Apply is transactional and idempotent. `ledger reconcile` performs the same routine full-set reconciliation used by email and the scheduled endpoint.
+`selection validate` is read-only and completes a paginated prefix scan. `selection initialize` is dry-run by default. It scans every bookmark carrying the exact generic `daily-miku` tag, derives `YYYY-MM-DD` from current `lastUpdate` in `DAILY_MIKU_TIMEZONE`, and proposes replacing that tag with `daily-miku-YYYY-MM-DD`. It writes only with `--apply`. Raindrop cannot make a multi-bookmark mutation transactional, so each idempotent mutation and its result are recorded in the initialization report and a failed run is safely resumable.
 
-`ledger correct` is the controlled exception to insert-only Selection Days. It requires a non-blank reason that states the reliable historical evidence superseding the recorded approximation, changes the row to the `manual` recording method, and appends the former and new date and method, reason, operator identity, and timestamp to correction history. It never silently moves another candidate out of a resulting conflict.
+`selection set` reads the bookmark, refuses to proceed if the full current tag set cannot be obtained, removes every existing Dated Selection Tag, and adds exactly one canonical tag. It reports any resulting Slot conflict and does not claim an audit history that Raindrop cannot provide.
 
 `image ingest` accepts a local raster file and an operator-supplied note describing the authorization basis. It applies the Image Pipeline's byte, type, decoding, dimension, normalization, metadata, and content-addressing policy before uploading and updating the Raindrop cover. It records provenance but does not claim that software independently verified reproduction rights.
 
@@ -54,8 +54,8 @@ Human output must identify the date and state. Selected output includes title, s
 `doctor` checks all configuration and dependencies required by the deployed application:
 
 1. Configuration values are present and parseable.
-2. The Selection Ledger database is reachable and at the expected schema version.
-3. Raindrop authentication works and the configured tag can be queried.
+2. Raindrop authentication works, a complete dated-tag prefix scan succeeds, and no malformed or multi-date assignment exists.
+3. The operational database is reachable and at the expected schema version when image or email features are configured; it is not checked as a source of Selection Days.
 4. Vercel Blob credentials permit the required metadata and object operations without leaving a test object behind.
 5. The SMTP server accepts a connection, STARTTLS, and authentication without sending a message.
 
@@ -96,7 +96,7 @@ In JSON mode, failed commands still emit one safe result document to standard ou
 `email send` performs these steps in order:
 
 1. Validate configuration and the requested date.
-2. Reconcile current `daily-miku` tags into the Selection Ledger so an owner can tag a bookmark and immediately run this command.
+2. Complete a current Raindrop scan and validate Dated Selection Tags.
 3. Resolve the requested Daily Slot.
 4. Require exactly one selected Daily Miku and one validated, controlled image mirror.
 5. Reserve and send a separate message to each configured recipient that does not already have a successful Email Delivery.
@@ -148,7 +148,7 @@ The workflow runs `daily-miku email send`. Job status is the only owner notifica
 - An empty or conflicting slot exits `5`, causing the job to fail visibly.
 - Configuration, dependency, partial-delivery, and unexpected failures also fail the job with their categorized exit code.
 
-After an empty-slot notification, the owner adds the `daily-miku` tag in Raindrop and runs `daily-miku email send` locally or through an equivalent manual workflow. The command's initial reconciliation makes a separate sync command unnecessary. There are no scheduler-level automatic retries beyond the command's three bounded dependency attempts.
+After an empty-slot notification, the owner adds the date-specific tag, for example `daily-miku-2026-07-17`, in Raindrop and runs `daily-miku email send` locally or through an equivalent manual workflow. The command reads current Raindrop state, so no sync command is necessary. There are no scheduler-level automatic retries beyond the command's three bounded dependency attempts.
 
 ## Configuration
 
@@ -157,13 +157,12 @@ V2 uses a clean configuration namespace and does not retain v1 environment names
 | Variable | Requirement |
 | --- | --- |
 | `DAILY_MIKU_TIMEZONE` | Optional; defaults to `Asia/Shanghai`. |
-| `DAILY_MIKU_TAG` | Optional; defaults to `daily-miku`. |
-| `DAILY_MIKU_OPERATOR` | Required for audited ledger correction and image mutation commands. |
-| `DAILY_MIKU_RECONCILE_SECRET` | Required by the internal scheduled reconciliation endpoint and its caller. |
+The canonical selection prefix is fixed as `daily-miku-` and is not configurable.
+| `DAILY_MIKU_OPERATOR` | Required for selection migration and image mutation reports. |
 | `DAILY_MIKU_EMAIL_FROM` | Required for email; one validated sender address. |
 | `DAILY_MIKU_EMAIL_RECIPIENTS` | Required for email; comma-separated validated recipient addresses. |
-| `RAINDROP_TOKEN` | Required for reconciliation and Raindrop-authoritative content. |
-| `DATABASE_URL` | Required for the Selection Ledger and Email Delivery records. |
+| `RAINDROP_TOKEN` | Required for Raindrop-authoritative selections and content. |
+| `DATABASE_URL` | Required for image provenance and Email Delivery records, not Selection Days. |
 | `BLOB_READ_WRITE_TOKEN` | Required for controlled image mirroring. |
 | `SMTP_HOST` | Required for email. |
 | `SMTP_PORT` | Optional; defaults to `587`. |

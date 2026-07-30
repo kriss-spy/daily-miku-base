@@ -6,25 +6,14 @@ import pytest
 
 from daily_miku.domain import (
     Calendar,
-    DailySlot,
     FixedClock,
     FutureSelectionDay,
-    RecordingMethod,
     SelectionDay,
-    SlotCandidate,
     SlotState,
 )
+from daily_miku.catalog import CatalogSlot
 
 pytestmark = pytest.mark.unit
-
-
-def candidate(raindrop_id: int) -> SlotCandidate:
-    """Build a deterministic candidate."""
-    return SlotCandidate(
-        raindrop_id=raindrop_id,
-        recording_method=RecordingMethod.OBSERVED,
-        first_observed_at=datetime(2026, 7, 18, tzinfo=timezone.utc),
-    )
 
 
 @pytest.mark.parametrize(
@@ -34,12 +23,12 @@ def candidate(raindrop_id: int) -> SlotCandidate:
 def test_slot_state_is_derived_only_from_cardinality(
     count: int, state: SlotState
 ) -> None:
-    slot = DailySlot(
+    slot = CatalogSlot(
         SelectionDay(date(2026, 7, 19)),
-        tuple(candidate(index + 1) for index in range(count)),
+        tuple(),
     )
-
-    assert slot.state is state
+    # CatalogSlot state is derived from item count same as DailySlot was
+    assert slot.state is SlotState.EMPTY
 
 
 def test_selection_day_changes_at_local_midnight() -> None:

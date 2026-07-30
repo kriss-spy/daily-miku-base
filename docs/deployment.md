@@ -2,11 +2,10 @@
 
 ## Overview
 
-daily-miku-base is deployed using:
+daily-miku-base v2 is deployed using:
 
-- **Netlify** — Frontend + Python API backend
-- **GitHub Actions** — Daily scheduled tasks (email, fetch)
-- **Raindrop.io CDN** — Image hosting (no local storage)
+- **Vercel** — ASGI application serving all routes
+- **Raindrop.io CDN** — Image hosting via direct-cover or controlled images
 - **Namecheap DNS** — Domain management for `dailymiku.dev`
 
 ## Prerequisites
@@ -31,17 +30,20 @@ daily-miku-base is deployed using:
 
 ### Set Environment Variables
 
-In Netlify dashboard → Site settings → Environment variables:
+In Vercel dashboard → Project settings → Environment variables:
 
 ```
 RAINDROP_TOKEN=your_raindrop_token_here
-RAINDROP_TAG=daily-miku
-SMTP_HOST=smtp.gmail.com
+DAILY_MIKU_TIMEZONE=Asia/Shanghai
+DAILY_MIKU_OPERATOR=operator-name
+DAILY_MIKU_EMAIL_FROM=sender@example.com
+DAILY_MIKU_EMAIL_RECIPIENTS=recipient@example.com
+SMTP_HOST=smtp.example.com
 SMTP_PORT=587
-SMTP_USER=your_email@gmail.com
-SMTP_PASSWORD=your_app_password
-EMAIL_FROM=your_email@gmail.com
-EMAIL_TO=recipient@example.com
+SMTP_USERNAME=smtp-user
+SMTP_PASSWORD=smtp-password
+DATABASE_URL=postgresql://...
+BLOB_READ_WRITE_TOKEN=vercel-blob-token
 ```
 
 ### Deploy

@@ -22,13 +22,7 @@ from daily_miku import cli, main
 from daily_miku.catalog import SlotCatalog
 from daily_miku.config import Settings
 from daily_miku.content_source import ContentFailure, InMemoryContentSource, TaggedItem
-from daily_miku.domain import (
-    Calendar,
-    FixedClock,
-    RecordingMethod,
-    SelectionDay,
-    SlotCandidate,
-)
+from daily_miku.domain import Calendar, FixedClock
 from daily_miku.http import create_app
 from daily_miku.images import ImagePipeline
 from daily_miku.images.blob import (
@@ -52,7 +46,6 @@ from daily_miku.images.store import (
     PostgresImageRepository,
 )
 from daily_miku.images.validate import UnsafeImage, normalize_raster
-from daily_miku.ledger.memory import InMemoryLedger
 from daily_miku.services import build_services
 
 pytestmark = pytest.mark.unit
@@ -75,28 +68,33 @@ def raster_bytes(
 
 def image_pipeline(
     *,
-    items: tuple[TaggedItem, ...] = (TaggedItem(7, title="Seven"),),
+    items: tuple[TaggedItem, ...] = (
+        TaggedItem(7, title="Seven", tags=("daily-miku-2026-07-18",)),
+    ),
     conflict: bool = False,
 ) -> tuple[
     ImagePipeline,
-    InMemoryLedger,
     InMemoryImageRepository,
     InMemoryBlobStore,
     InMemoryCoverPublisher,
 ]:
     """Build the full image capability without external services."""
-    ledger = InMemoryLedger()
-    day = SelectionDay(date(2026, 7, 18))
-    ledger.record_candidate(day, SlotCandidate(7, RecordingMethod.OBSERVED, NOW))
-    if conflict:
-        ledger.record_candidate(day, SlotCandidate(8, RecordingMethod.MANUAL, NOW))
     repository = InMemoryImageRepository()
     blob = InMemoryBlobStore()
     publisher = InMemoryCoverPublisher()
-    source = InMemoryContentSource(items)
-    catalog = SlotCatalog(
-        ledger, Calendar.named("Asia/Shanghai"), FixedClock(NOW), source
-    )
+    selected_items = [
+        replace(
+            item,
+            tags=item.tags or ("daily-miku-2026-07-18",),
+        )
+        for item in items
+    ]
+    if conflict and not any(item.raindrop_id == 8 for item in selected_items):
+        selected_items.append(
+            TaggedItem(8, tags=("daily-miku-2026-07-18",), title="Eight")
+        )
+    source = InMemoryContentSource(tuple(selected_items))
+    catalog = SlotCatalog(Calendar.named("Asia/Shanghai"), FixedClock(NOW), source)
     pipeline = ImagePipeline(
         catalog,
         repository,
@@ -106,7 +104,7 @@ def image_pipeline(
         "operator",
         RetryPolicy(sleep=lambda _: None, jitter=lambda: 0),
     )
-    return pipeline, ledger, repository, blob, publisher
+    return pipeline, repository, blob, publisher
 
 
 @pytest.mark.parametrize(
@@ -485,7 +483,7 @@ def test_activate_and_withdraw_use_the_same_lock_when_metadata_rows_are_absent()
 
 
 def test_ingest_records_authorization_and_activates_after_dependencies() -> None:
-    pipeline, _, repository, blob, publisher = image_pipeline()
+    pipeline, repository, blob, publisher = image_pipeline()
 
     record = pipeline.ingest(7, raster_bytes("JPEG"), "Creator granted permission")
 
@@ -498,7 +496,7 @@ def test_ingest_records_authorization_and_activates_after_dependencies() -> None
 
 
 def test_failed_cover_update_does_not_activate_delivery() -> None:
-    pipeline, _, repository, blob, publisher = image_pipeline()
+    pipeline, repository, blob, publisher = image_pipeline()
     publisher.fail = True
 
     from daily_miku.images import ImageDependencyError
@@ -511,7 +509,7 @@ def test_failed_cover_update_does_not_activate_delivery() -> None:
 
 
 def test_activation_failure_compensates_external_cover_mutation() -> None:
-    pipeline, _, repository, _, publisher = image_pipeline()
+    pipeline, repository, _, publisher = image_pipeline()
     publisher.covers[7] = "https://former.example/cover.png"
     repository.fail_activate = True
 
@@ -545,7 +543,7 @@ class LostResponseCoverPublisher(InMemoryCoverPublisher):
 
 def test_cover_retry_and_activation_compensation_keep_original_snapshot() -> None:
     """Never replace compensation facts by re-reading after an ambiguous PUT."""
-    pipeline, _, repository, _, _ = image_pipeline()
+    pipeline, repository, _, _ = image_pipeline()
     publisher = LostResponseCoverPublisher(1)
     publisher.covers[7] = "https://original.example/cover.png"
     repository.fail_activate = True
@@ -563,7 +561,7 @@ def test_cover_retry_and_activation_compensation_keep_original_snapshot() -> Non
 
 def test_exhausted_ambiguous_cover_put_restores_original_before_failure() -> None:
     """Compensate even when all three PUT responses are lost after mutation."""
-    pipeline, _, repository, _, _ = image_pipeline()
+    pipeline, repository, _, _ = image_pipeline()
     publisher = LostResponseCoverPublisher(3)
     publisher.covers[7] = "https://original.example/cover.png"
     object.__setattr__(pipeline, "cover_publisher", publisher)
@@ -597,7 +595,7 @@ class FlakyBlobStore(InMemoryBlobStore):
 
 
 def test_transient_operations_retry_at_most_three_times_with_bounded_delays() -> None:
-    pipeline, _, _, _, _ = image_pipeline()
+    pipeline, _, _, _ = image_pipeline()
     blob = FlakyBlobStore(2)
     delays: list[float] = []
     object.__setattr__(pipeline, "blob_store", blob)
@@ -615,7 +613,7 @@ def test_transient_operations_retry_at_most_three_times_with_bounded_delays() ->
 
 
 def test_non_transient_operations_are_never_retried() -> None:
-    pipeline, _, repository, _, _ = image_pipeline()
+    pipeline, repository, _, _ = image_pipeline()
     blob = FlakyBlobStore(3, transient=False)
     delays: list[float] = []
     object.__setattr__(pipeline, "blob_store", blob)
@@ -636,7 +634,7 @@ def test_non_transient_operations_are_never_retried() -> None:
 
 
 def test_exhausted_transient_operation_stops_after_three_attempts() -> None:
-    pipeline, _, repository, _, _ = image_pipeline()
+    pipeline, repository, _, _ = image_pipeline()
     blob = FlakyBlobStore(5, transient=True)
     delays: list[float] = []
     object.__setattr__(pipeline, "blob_store", blob)
@@ -657,9 +655,9 @@ def test_exhausted_transient_operation_stops_after_three_attempts() -> None:
 
 
 def test_withdrawal_is_durable_and_never_deletes_shared_blob() -> None:
-    pipeline, _, repository, blob, _ = image_pipeline()
+    pipeline, repository, blob, _ = image_pipeline()
     first = pipeline.ingest(7, raster_bytes(), "authorized")
-    second_pipeline, _, second_repository, _, _ = image_pipeline(
+    second_pipeline, second_repository, _, _ = image_pipeline(
         items=(TaggedItem(7, title="Seven"),)
     )
     # Model another item reference by retaining the same immutable bytes externally.
@@ -687,15 +685,18 @@ def image_client(
 ) -> TestClient:
     """Build an isolated HTTP client for one configured image outcome."""
     settings = Settings.in_memory()
-    ledger = InMemoryLedger()
-    day = SelectionDay(date(2026, 7, 18))
     items: list[TaggedItem] = []
     if selected:
-        ledger.record_candidate(day, SlotCandidate(7, RecordingMethod.OBSERVED, NOW))
-        items.append(TaggedItem(7, cover_identity=cover, title="Seven"))
+        items.append(
+            TaggedItem(
+                7,
+                cover_identity=cover,
+                title="Seven",
+                tags=("daily-miku-2026-07-18",),
+            )
+        )
     if conflict:
-        ledger.record_candidate(day, SlotCandidate(8, RecordingMethod.MANUAL, NOW))
-        items.append(TaggedItem(8, title="Eight"))
+        items.append(TaggedItem(8, title="Eight", tags=("daily-miku-2026-07-18",)))
     source = InMemoryContentSource(tuple(items), lookup_failure=lookup_failure)
     repository = InMemoryImageRepository(fail=repository_failure)
     blob = InMemoryBlobStore()
@@ -703,7 +704,6 @@ def image_client(
     services = build_services(
         settings,
         clock=FixedClock(NOW),
-        ledger=ledger,
         content_source=source,
         image_repository=repository,
         blob_store=blob,
@@ -743,13 +743,6 @@ def image_client(
             "public",
         ),
         (
-            image_client(cover="https://upstream.test/a"),
-            "/image/2026-07-18",
-            502,
-            "image_upstream_failed",
-            "no-store",
-        ),
-        (
             image_client(repository_failure=True),
             "/image/2026-07-18",
             503,
@@ -776,6 +769,17 @@ def test_image_http_outcomes_and_cache_contract(
     assert response.headers.get("content-type", "").startswith("application/json")
 
 
+def test_image_http_direct_cover_redirect() -> None:
+    response = image_client(cover="https://upstream.test/a").get(
+        "/image/2026-07-18", follow_redirects=False
+    )
+
+    assert response.status_code == 307
+    assert response.headers["location"] == "https://upstream.test/a"
+    assert response.headers["Cache-Control"] == "public, max-age=60, s-maxage=300"
+    assert "ETag" not in response.headers
+
+
 def test_image_http_redirect_is_mutable_and_validated() -> None:
     response = image_client(ingest=True).get(
         "/image/2026-07-18", follow_redirects=False
@@ -788,7 +792,7 @@ def test_image_http_redirect_is_mutable_and_validated() -> None:
 
 
 @pytest.mark.parametrize("withdraw", [False, True])
-def test_mirror_and_tombstone_resolution_do_not_depend_on_upstream(
+def test_mirror_and_tombstone_resolution_require_current_selection_snapshot(
     withdraw: bool,
 ) -> None:
     client = image_client(
@@ -797,13 +801,13 @@ def test_mirror_and_tombstone_resolution_do_not_depend_on_upstream(
 
     response = client.get("/image/2026-07-18", follow_redirects=False)
 
-    assert response.status_code == (410 if withdraw else 307)
+    assert response.status_code == 504
 
 
 def test_cli_image_commands_map_safety_and_dependency_outcomes(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    pipeline, _, _, _, _ = image_pipeline()
+    pipeline, _, _, _ = image_pipeline()
     assert cli.ingest_image(pipeline, 7, b"html", "authorized", json_output=True) == 5
     assert "image_rejected" in capsys.readouterr().out
 

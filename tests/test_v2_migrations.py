@@ -79,6 +79,9 @@ class MigrationConnection:
         self.database.tables.update(
             re.findall(r"CREATE TABLE(?: IF NOT EXISTS)? ([a-z_]+)", query)
         )
+        self.database.tables.difference_update(
+            re.findall(r"DROP TABLE ([a-z_]+)", query)
+        )
         if self.database.fail_migration and "selection_ledger" in query:
             raise RuntimeError("injected migration failure")
         return FakeResult()
@@ -94,19 +97,17 @@ class TestMigrationRunner:
         first = runner.apply()
         second = runner.apply()
 
-        assert first.applied_versions == (1, 2, 3)
+        assert first.applied_versions == (1, 2, 3, 4, 5)
         assert second.applied_versions == ()
-        assert second.current_version == runner.expected_version == 3
+        assert second.current_version == runner.expected_version == 5
         assert database.tables == {
             "schema_migrations",
-            "selection_ledger",
-            "selection_corrections",
-            "reconciliation_runs",
             "image_provenance",
             "active_images",
             "image_withdrawals",
+            "email_delivery_attempts",
         }
-        assert runner.current_version() == 3
+        assert runner.current_version() == 5
 
     def test_failure_rolls_back_the_complete_apply(self) -> None:
         database = MigrationDatabase()
@@ -118,6 +119,18 @@ class TestMigrationRunner:
 
         assert database.tables == set()
         assert database.versions == {}
+
+
+def test_email_delivery_migration_serializes_pending_attempts() -> None:
+    sql = (
+        files("daily_miku.ledger.migrations")
+        .joinpath("0004_email_deliveries.sql")
+        .read_text(encoding="utf-8")
+    )
+
+    assert "email_delivery_attempts" in sql
+    assert "WHERE status = 'pending'" in sql
+    assert "WHERE status = 'sent'" in sql
 
 
 def test_reconciliation_state_migration_constrains_terminal_shapes() -> None:

@@ -23,7 +23,7 @@ The homepage and dated route share one Daily Slot composition:
 
 1. A narrow date rail identifies Daily Miku and exposes nearby calendar dates.
 2. A large media stage presents the selected image or the slot-state treatment.
-3. An editorial panel identifies the date, state, title, description, source, Raindrop ID, and recording context.
+3. An editorial panel identifies the date, state, title, description, source, Raindrop ID, and Dated Selection Tag.
 4. Previous-day and next-day links provide deterministic calendar navigation.
 
 The homepage renders today's Slot directly. `/today` redirects to it as specified by the HTTP contract. A dated route uses the same composition and does not visually downgrade historical selections.
@@ -34,7 +34,7 @@ The date rail is a local chronological aid, not a list of only populated dates. 
 
 ### Selected
 
-One controlled image occupies the media stage. The editorial panel leads with the title and a concise description, followed by source attribution, Raindrop ID, recording method, and first-observed context. The source link is secondary to calendar navigation.
+One controlled image occupies the media stage. The editorial panel leads with the title and a concise description, followed by source attribution, Raindrop ID, and Dated Selection Tag. The source link is secondary to calendar navigation.
 
 ### Empty
 

@@ -1,6 +1,6 @@
 {
   "version": 2,
   "routes": [
-    { "src": "/(.*)", "dest": "/api/hybrid.py" }
+    { "src": "/(.*)", "dest": "/api/index.py" }
   ]
 }

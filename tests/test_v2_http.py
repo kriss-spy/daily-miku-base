@@ -1,7 +1,7 @@
 """Tests for the injectable v2 FastAPI shell."""
 
 import json
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,11 +13,8 @@ from daily_miku.content_source import (
     ScanStatus,
     TaggedItem,
 )
-from daily_miku.domain import FixedClock, RecordingMethod, SelectionDay, SlotCandidate
+from daily_miku.domain import FixedClock
 from daily_miku.http import create_app
-from daily_miku.ledger.memory import InMemoryLedger
-from daily_miku.ledger.port import LedgerDependencyError
-from daily_miku.ledger.postgres import PostgresLedger
 from daily_miku.logging_config import JSONFormatter
 from daily_miku.services import build_services
 
@@ -28,38 +25,35 @@ def slot_client(*, lookup_failure: ContentFailure | None = None) -> TestClient:
     """Build a complete isolated Slot API fixture."""
     settings = Settings.in_memory()
     observed_at = datetime(2026, 7, 16, 16, 3, tzinfo=timezone.utc)
-    ledger = InMemoryLedger()
-    ledger.record_candidate(
-        SelectionDay(date(2026, 7, 17)),
-        SlotCandidate(3, RecordingMethod.OBSERVED, observed_at),
-    )
-    ledger.record_candidate(
-        SelectionDay(date(2026, 7, 18)),
-        SlotCandidate(8, RecordingMethod.LEGACY, observed_at),
-    )
-    ledger.record_candidate(
-        SelectionDay(date(2026, 7, 18)),
-        SlotCandidate(9, RecordingMethod.MANUAL, observed_at),
-    )
     source = InMemoryContentSource(
         (
             TaggedItem(
                 3,
+                last_update=observed_at,
                 source_url="https://example.com/three",
                 title="Three",
                 excerpt="Description",
                 domain="example.com",
-                tags=("daily-miku",),
+                tags=("daily-miku-2026-07-17",),
             ),
-            TaggedItem(8, source_url="https://example.com/eight", title="Eight"),
-            TaggedItem(9, source_url="https://example.com/nine", title="Nine"),
+            TaggedItem(
+                8,
+                source_url="https://example.com/eight",
+                title="Eight",
+                tags=("daily-miku-2026-07-18",),
+            ),
+            TaggedItem(
+                9,
+                source_url="https://example.com/nine",
+                title="Nine",
+                tags=("daily-miku-2026-07-18",),
+            ),
         ),
         lookup_failure=lookup_failure,
     )
     services = build_services(
         settings,
         clock=FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
-        ledger=ledger,
         content_source=source,
     )
     return TestClient(create_app(services=services))
@@ -67,21 +61,24 @@ def slot_client(*, lookup_failure: ContentFailure | None = None) -> TestClient:
 
 def test_composition_root_builds_an_in_memory_http_graph() -> None:
     settings = Settings.in_memory()
-    services = build_services(settings, ledger=InMemoryLedger())
+    services = build_services(settings)
     app = create_app(settings, services)
 
     assert app.state.services is services
     assert app.state.services.calendar.timezone.key == "Asia/Shanghai"
 
 
-def test_composition_root_uses_durable_ledger_by_default() -> None:
+def test_composition_root_has_no_selection_ledger_services() -> None:
     services = build_services(Settings.in_memory())
 
-    assert isinstance(services.ledger, PostgresLedger)
+    assert not hasattr(services, "ledger")
+    assert not hasattr(services, "reconciler")
+    assert not hasattr(services, "corrector")
+    assert not hasattr(services, "initializer")
 
 
 def test_app_uses_settings_from_an_injected_service_graph() -> None:
-    services = build_services(Settings.in_memory(), ledger=InMemoryLedger())
+    services = build_services(Settings.in_memory())
 
     app = create_app(services=services)
 
@@ -163,9 +160,8 @@ def test_dated_today_and_range_return_complete_shared_representations() -> None:
                 "source_url": "https://example.com/three",
                 "image_url": "/image/2026-07-17",
                 "domain": "example.com",
-                "tags": ["daily-miku"],
-                "recording_method": "observed",
-                "first_observed_at": "2026-07-16T16:03:00Z",
+                "tags": ["daily-miku-2026-07-17"],
+                "selection_tag": "daily-miku-2026-07-17",
             }
         ],
         "links": {
@@ -230,7 +226,6 @@ def test_selector_absence_remains_distinct_from_dependency_failure() -> None:
     empty_services = build_services(
         Settings.in_memory(),
         clock=FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
-        ledger=InMemoryLedger(),
         content_source=InMemoryContentSource(),
     )
     no_result = TestClient(create_app(services=empty_services)).get("/api/slots/latest")
@@ -243,23 +238,17 @@ def test_selector_absence_remains_distinct_from_dependency_failure() -> None:
     assert random_no_result.json()["error"]["code"] == "slot_not_found"
 
 
-def test_ledger_dependency_failure_is_no_store_503() -> None:
-    class FailingLedger(InMemoryLedger):
-        def candidates_for(self, day: SelectionDay) -> tuple[SlotCandidate, ...]:
-            raise LedgerDependencyError("database unavailable")
-
+def test_slot_resolution_does_not_require_the_legacy_ledger() -> None:
     services = build_services(
         Settings.in_memory(),
         clock=FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
-        ledger=FailingLedger(),
         content_source=InMemoryContentSource(),
     )
 
     response = TestClient(create_app(services=services)).get("/api/slots/2026-07-19")
 
-    assert response.status_code == 503
-    assert response.json()["error"]["code"] == "ledger_unavailable"
-    assert response.headers["Cache-Control"] == "no-store"
+    assert response.status_code == 200
+    assert response.json()["state"] == "empty"
 
 
 @pytest.mark.parametrize(
@@ -280,80 +269,273 @@ def test_content_dependency_failure_classes_are_distinct(
     assert dependency.headers["Cache-Control"] == "no-store"
 
 
-def test_internal_reconcile_requires_bearer_authentication() -> None:
-    settings = Settings.in_memory()
-    source = InMemoryContentSource((TaggedItem(7),))
-    services = build_services(
-        settings,
-        clock=FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
-        ledger=InMemoryLedger(),
-        content_source=source,
-    )
-    client = TestClient(create_app(services=services))
+def test_html_routes_render_selected_slot_and_calendar_navigation() -> None:
+    client = slot_client()
 
-    missing = client.post("/internal/reconcile")
-    invalid = client.post(
-        "/internal/reconcile", headers={"Authorization": "Bearer incorrect"}
-    )
-    non_ascii = client.post(
-        "/internal/reconcile",
-        headers=[(b"authorization", b"Bearer incorrect-\xe9")],
-    )
+    selected = client.get("/2026-07-17")
+    redirected = client.get("/today", follow_redirects=False)
 
-    assert missing.status_code == invalid.status_code == 401
-    assert missing.headers["WWW-Authenticate"] == "Bearer"
-    assert missing.json()["error"]["code"] == "authentication_required"
-    assert invalid.json()["error"]["code"] == "authentication_required"
-    assert non_ascii.status_code == 401
-    assert source.scan_count == 0
+    assert selected.status_code == 200
+    assert selected.headers["content-type"].startswith("text/html")
+    assert '<main class="slot-page slot-page--selected"' in selected.text
+    assert 'src="/image/2026-07-17"' in selected.text
+    assert 'alt="Three"' in selected.text
+    assert "Description" in selected.text
+    assert "Raindrop ID" in selected.text and ">3<" in selected.text
+    assert "daily-miku-2026-07-17" in selected.text
+    assert "Recording method" not in selected.text
+    assert 'href="/2026-07-16"' in selected.text
+    assert 'href="/2026-07-18"' in selected.text
+    assert 'aria-current="date"' in selected.text
+    assert redirected.status_code == 307
+    assert redirected.headers["location"] == "/"
 
 
-def test_internal_reconcile_invokes_shared_idempotent_service() -> None:
-    settings = Settings.in_memory()
-    source = InMemoryContentSource((TaggedItem(7), TaggedItem(9)))
-    services = build_services(
-        settings,
-        clock=FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
-        ledger=InMemoryLedger(),
-        content_source=source,
-    )
-    client = TestClient(create_app(services=services))
-    headers = {"Authorization": "Bearer not-a-real-secret"}
+def test_home_empty_and_dated_conflict_are_deliberate_html_states() -> None:
+    client = slot_client()
 
-    first = client.post("/internal/reconcile", headers=headers)
-    second = client.post("/internal/reconcile", headers=headers)
+    empty = client.get("/")
+    conflict = client.get("/2026-07-18")
 
-    assert first.status_code == second.status_code == 200
-    assert first.json() == {
-        "run_id": 1,
-        "status": "complete",
-        "discovered": 2,
-        "inserted": 2,
-    }
-    assert second.json()["inserted"] == 0
-    assert services.reconciler.content_source is services.content_source
-    assert services.reconciler.ledger is services.ledger
+    assert empty.status_code == conflict.status_code == 200
+    assert "Nothing was selected" in empty.text
+    assert "This date remains open" in empty.text
+    assert 'class="open-frame"' in empty.text
+    assert "Selection conflict" in conflict.text
+    assert "Multiple Daily Mikus occupy this date" in conflict.text
+    assert "Eight" in conflict.text and "Nine" in conflict.text
+    assert conflict.text.count("Raindrop ID") == 2
+    assert '<ul class="candidate-list">' in conflict.text
 
 
-def test_internal_reconcile_exposes_incomplete_run_as_dependency_failure() -> None:
-    settings = Settings.in_memory()
-    source = InMemoryContentSource((TaggedItem(7),), status=ScanStatus.INCOMPLETE)
-    services = build_services(
-        settings,
-        clock=FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
-        ledger=InMemoryLedger(),
-        content_source=source,
-    )
+@pytest.mark.parametrize(
+    ("url", "status", "code"),
+    [
+        ("/2026-7-20", 400, "date_malformed"),
+        ("/2026-02-30", 400, "date_malformed"),
+        ("/2026-07-20", 422, "future_selection_day"),
+    ],
+)
+def test_html_date_validation_preserves_safe_failures(
+    url: str, status: int, code: str
+) -> None:
+    response = slot_client().get(url)
 
-    response = TestClient(create_app(services=services)).post(
-        "/internal/reconcile",
-        headers={"Authorization": "Bearer not-a-real-secret"},
-    )
+    assert response.status_code == status
+    assert response.json()["error"]["code"] == code
+
+
+def test_html_dependency_failure_is_not_rendered_as_empty() -> None:
+    response = slot_client(lookup_failure=ContentFailure.UNAVAILABLE).get("/2026-07-17")
 
     assert response.status_code == 503
-    assert response.json()["error"] == {
-        "code": "injected_scan_failure",
-        "message": "The tagged set could not be scanned completely.",
-        "details": {"run_id": 1, "status": "incomplete", "discovered": 1},
-        "request_id": response.headers["X-Request-ID"],
+    assert response.json()["error"]["code"] == "content_unavailable"
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+def test_editorial_stylesheet_has_responsive_and_accessible_invariants() -> None:
+    css = slot_client().get("/static/editorial.css")
+
+    assert css.status_code == 200
+    assert "overflow-x: hidden" in css.text
+    assert "@media (max-width: 48rem)" in css.text
+    assert "@media (prefers-reduced-motion: reduce)" in css.text
+    assert ":focus-visible" in css.text
+
+
+def test_search_groups_complete_conflict_and_paginates_opaque_results() -> None:
+    client = slot_client()
+
+    conflict = client.get("/api/search", params={"q": "Eight"})
+    first = client.get("/api/search", params={"q": "e", "limit": 1})
+    second = client.get(
+        "/api/search",
+        params={"q": "e", "limit": 1, "cursor": first.json()["next_cursor"]},
+    )
+
+    assert conflict.status_code == 200
+    assert conflict.json()["items"][0]["state"] == "conflict"
+    assert [item["raindrop_id"] for item in conflict.json()["items"][0]["items"]] == [
+        8,
+        9,
+    ]
+    assert len(first.json()["items"]) == len(second.json()["items"]) == 1
+    assert first.json()["next_cursor"]
+    assert first.json()["links"]["next"]
+    encoded = client.get("/api/search", params={"q": "Three & Nine"})
+    assert "q=Three+%26+Nine" in encoded.json()["links"]["self"]
+
+
+def test_search_html_is_complete_for_results_and_empty_state() -> None:
+    client = slot_client()
+
+    conflict = client.get("/search", params={"q": "Eight"})
+    empty = client.get("/search", params={"q": "absent phrase"})
+
+    assert conflict.status_code == empty.status_code == 200
+    assert "Eight" in conflict.text and "Nine" in conflict.text
+    assert 'href="/2026-07-18"' in conflict.text
+    assert "No Daily Slots match this search" in empty.text
+    assert '<form action="/search" method="get"' in empty.text
+
+
+def test_search_html_accepts_cursor_parameter() -> None:
+    """HTML search accepts cursor parameter without error."""
+    client = slot_client()
+
+    first = client.get("/search", params={"q": "e"})
+    assert first.status_code == 200
+    # "e" matches "Eight" and "Nine" from slot_client fixture
+    assert "Eight" in first.text or "Nine" in first.text
+
+    # The search template receives the page object with items and next_cursor
+    # When there are more results than the page limit, a next-page link is rendered
+    # With only 2 matching results and default limit 24, no pagination link appears
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "/search?q=e&cursor=bad",
+        "/search?q=e&cursor=%25%25%25%25",
+    ],
+)
+def test_search_html_rejects_invalid_cursors(url: str) -> None:
+    """HTML search returns 400 for malformed or expired cursors."""
+    response = slot_client().get(url)
+    assert response.status_code == 400
+
+
+def test_statistics_support_explicit_and_unbounded_default_intervals() -> None:
+    client = slot_client()
+
+    bounded = client.get(
+        "/api/statistics", params={"from": "2026-07-17", "to": "2026-07-19"}
+    )
+    long_period = client.get(
+        "/api/statistics", params={"from": "2025-01-01", "to": "2026-07-19"}
+    )
+    default = client.get("/api/statistics")
+
+    assert bounded.json() == {
+        "from": "2026-07-17",
+        "to": "2026-07-19",
+        "calendar_days": 3,
+        "selected_slots": 1,
+        "empty_slots": 1,
+        "conflict_slots": 1,
+        "candidates": 3,
     }
+    assert long_period.status_code == 200
+    assert long_period.json()["calendar_days"] > 366
+    assert default.json()["from"] == "2026-07-17"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "/api/search?q=",
+        "/api/search?q=Three&cursor=bad",
+        "/api/search?q=Three&cursor=%25%25%25%25",
+        "/api/search?q=Three&limit=101",
+        "/api/statistics?from=2026-07-17",
+        "/api/statistics?from=bad&to=2026-07-19",
+    ],
+)
+def test_search_and_statistics_reject_malformed_requests(url: str) -> None:
+    response = slot_client().get(url)
+
+    assert response.status_code == 400
+
+
+def test_archive_api_and_html_keep_complete_conflicts_newest_first() -> None:
+    client = slot_client()
+
+    first = client.get("/api/archive", params={"limit": 1})
+    second = client.get(
+        "/api/archive",
+        params={"limit": 1, "cursor": first.json()["next_cursor"]},
+    )
+    html = client.get("/archive")
+
+    assert first.json()["items"][0]["date"] == "2026-07-18"
+    assert first.json()["items"][0]["state"] == "conflict"
+    assert len(first.json()["items"][0]["items"]) == 2
+    assert second.json()["items"][0]["date"] == "2026-07-17"
+    assert first.json()["links"]["next"]
+    assert html.status_code == 200
+    assert "Unresolved conflict · 2 candidates" in html.text
+    assert 'href="/2026-07-18"' in html.text
+    assert "archive-grid" in html.text
+
+    context = client.get("/archive", params={"from": "2026-07-17", "to": "2026-07-19"})
+    assert "2026-07-19 · empty" in context.text
+    assert "2026-07-18 · conflict" in context.text
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["/api/archive?limit=0", "/api/archive?limit=101", "/api/archive?cursor=bad"],
+)
+def test_archive_rejects_invalid_limits_and_cursors(url: str) -> None:
+    response = slot_client().get(url)
+
+    assert response.status_code == 400
+
+
+def test_reconciliation_endpoints_are_removed() -> None:
+    client = slot_client()
+
+    assert client.post("/internal/reconcile").status_code == 404
+    assert client.get("/internal/reconciliation-status").status_code == 404
+
+
+def test_multi_date_assignment_has_exact_409_contract() -> None:
+    settings = Settings.in_memory()
+    source = InMemoryContentSource(
+        (
+            TaggedItem(
+                7,
+                tags=("daily-miku-2026-07-17", "daily-miku-2026-07-18"),
+            ),
+        )
+    )
+    services = build_services(
+        settings,
+        clock=FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
+        content_source=source,
+    )
+
+    client = TestClient(create_app(services=services))
+    response = client.get("/api/slots/2026-07-17")
+    image = client.get("/image/2026-07-17")
+    statistics = client.get(
+        "/api/statistics", params={"from": "2026-07-17", "to": "2026-07-19"}
+    )
+
+    assert response.status_code == image.status_code == statistics.status_code == 409
+    assert response.json()["error"]["code"] == "multi_date_assignment"
+    assert response.json()["error"]["details"]["assignments"] == [
+        {
+            "raindrop_id": 7,
+            "selection_tags": [
+                "daily-miku-2026-07-17",
+                "daily-miku-2026-07-18",
+            ],
+        }
+    ]
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+def test_statistics_maps_incomplete_snapshot_failure() -> None:
+    services = build_services(
+        Settings.in_memory(),
+        clock=FixedClock(datetime(2026, 7, 19, tzinfo=timezone.utc)),
+        in_memory=True,
+        content_source=InMemoryContentSource(status=ScanStatus.INCOMPLETE),
+    )
+
+    response = TestClient(create_app(services=services)).get("/api/statistics")
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "content_upstream_failed"

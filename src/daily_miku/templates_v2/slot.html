@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ slot.day.value.isoformat() }} | Daily Miku</title>
+    <link rel="stylesheet" href="/static/editorial.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#slot-details">Skip to Daily Slot details</a>
+    <header class="site-header">
+      <a class="wordmark" href="/">Daily Miku</a>
+      <span>One selection, one calendar day</span>
+    </header>
+
+    <main class="slot-page slot-page--{{ slot.state.value }}">
+      <nav class="date-rail" aria-label="Nearby Daily Slots">
+        <ol>
+          {% for rail_slot in rail %}
+          <li>
+            <a href="/{{ rail_slot.day.value.isoformat() }}"
+               class="rail-date rail-date--{{ rail_slot.state.value }}"
+               {% if rail_slot.day == slot.day %}aria-current="date"{% endif %}>
+              <span>{{ rail_slot.day.value.strftime("%b") }}</span>
+              <strong>{{ rail_slot.day.value.strftime("%d") }}</strong>
+              <span class="visually-hidden">{{ rail_slot.state.value }} Slot</span>
+            </a>
+          </li>
+          {% endfor %}
+        </ol>
+      </nav>
+
+      <section class="media-stage" aria-label="Daily Miku artwork">
+        {% if slot.state.value == "selected" %}
+        <img src="/image/{{ slot.day.value.isoformat() }}" alt="{{ slot.items[0].title }}">
+        {% elif slot.state.value == "empty" %}
+        <div class="open-frame" aria-hidden="true"><span>{{ slot.day.value.strftime("%d") }}</span></div>
+        {% else %}
+        <div class="conflict-frame" aria-hidden="true"><span></span><span></span></div>
+        {% endif %}
+      </section>
+
+      <article class="editorial-panel" id="slot-details">
+        <p class="eyebrow">Selection Day <time datetime="{{ slot.day.value.isoformat() }}">{{ slot.day.value.strftime("%A, %B %d, %Y") }}</time></p>
+        {% if slot.state.value == "selected" %}
+        {% set item = slot.items[0] %}
+        <p class="state-label">Selected Daily Slot</p>
+        <h1>{{ item.title }}</h1>
+        {% if item.excerpt %}<p class="description">{{ item.excerpt }}</p>{% endif %}
+        <dl class="metadata">
+          {% if item.source_url %}<div><dt>Source</dt><dd><a href="{{ item.source_url }}" rel="noreferrer">{{ item.domain or "Original artwork" }}</a></dd></div>{% endif %}
+          <div><dt>Raindrop ID</dt><dd>{{ item.raindrop_id }}</dd></div>
+          <div><dt>Selection tag</dt><dd>{{ item.selection_tag }}</dd></div>
+        </dl>
+        {% elif slot.state.value == "empty" %}
+        <p class="state-label">Open Daily Slot</p>
+        <h1>Nothing was selected</h1>
+        <p class="description">This date remains open rather than borrowing artwork from another day.</p>
+        {% else %}
+        <p class="state-label state-label--conflict">Unresolved Daily Slot</p>
+        <h1>Selection conflict</h1>
+        <p class="description">Multiple Daily Mikus occupy this date. No candidate is presented as the winner.</p>
+        <ul class="candidate-list">
+          {% for item in slot.items %}
+          <li><strong>{{ item.title }}</strong><span>Raindrop ID {{ item.raindrop_id }}</span></li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+
+        <nav class="day-controls" aria-label="Previous and next calendar day">
+          {% if previous %}<a href="/{{ previous.isoformat() }}" rel="prev"><span>Previous</span>{{ previous.isoformat() }}</a>{% endif %}
+          {% if next %}<a href="/{{ next.isoformat() }}" rel="next"><span>Next</span>{{ next.isoformat() }}</a>{% endif %}
+        </nav>
+      </article>
+    </main>
+  </body>
+</html>

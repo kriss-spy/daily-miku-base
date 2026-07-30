@@ -51,6 +51,14 @@ class BlobStore(Protocol):
         """Idempotently store bytes and return their public identity."""
         ...
 
+    def get(self, key: str) -> tuple[bytes, str]:
+        """Read controlled bytes and their validated media type."""
+        ...
+
+    def delete(self, key: str) -> None:
+        """Delete a diagnostic object; controlled images are never deleted here."""
+        ...
+
 
 class SDKBlobMetadata(Protocol):
     """Public Vercel SDK result fields used by this adapter."""
@@ -108,6 +116,8 @@ class SDKBlobClient(Protocol):
         use_cache: bool,
     ) -> SDKBlobDownload: ...
 
+    def delete(self, urls: str | list[str]) -> object: ...
+
 
 def verify_content_key(key: str, data: bytes) -> None:
     """Reject mutable or incorrectly addressed image writes."""
@@ -134,6 +144,18 @@ class InMemoryBlobStore:
             raise BlobDependencyError("Immutable Blob key already has other content")
         self.objects[key] = (data, content_type)
         return BlobObject(key, f"{self.base_url.rstrip('/')}/{key}")
+
+    def get(self, key: str) -> tuple[bytes, str]:
+        """Read bytes from the isolated immutable store."""
+        if self.fail or key not in self.objects:
+            raise BlobDependencyError("Blob content is unavailable")
+        return self.objects[key]
+
+    def delete(self, key: str) -> None:
+        """Remove a temporary diagnostic object."""
+        if self.fail:
+            raise BlobDependencyError("Blob deletion is unavailable")
+        self.objects.pop(key, None)
 
 
 @dataclass(frozen=True)
@@ -176,6 +198,31 @@ class VercelBlobStore:
         except (TypeError, ValueError) as exc:
             raise BlobDependencyError("Blob upload failed") from exc
         return BlobObject(key, url)
+
+    def get(self, key: str) -> tuple[bytes, str]:
+        """Download controlled bytes with bounded validation."""
+        try:
+            with self.client_factory(self.token) as client:
+                result = client.get(
+                    key, access="public", timeout=self.timeout, use_cache=True
+                )
+        except BlobError as exc:
+            raise _dependency_error(exc) from exc
+        content_type = (result.content_type or "").split(";", 1)[0]
+        if result.pathname != key or content_type != "image/png":
+            raise BlobDependencyError("Blob content failed validation")
+        if result.size is None or result.size != len(result.content):
+            raise BlobDependencyError("Blob content size failed validation")
+        verify_content_key(key, result.content)
+        return result.content, content_type
+
+    def delete(self, key: str) -> None:
+        """Remove a temporary diagnostic object by controlled key."""
+        try:
+            with self.client_factory(self.token) as client:
+                client.delete(key)
+        except BlobError as exc:
+            raise _dependency_error(exc) from exc
 
     def _verify_existing(
         self,

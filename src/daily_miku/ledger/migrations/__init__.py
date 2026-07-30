@@ -35,6 +35,12 @@ def _load_migrations() -> tuple[Migration, ...]:
     return tuple(migrations)
 
 
+def expected_schema_version() -> int:
+    """Return the schema version required by this release artifact."""
+    migrations = _load_migrations()
+    return migrations[-1].version if migrations else 0
+
+
 class MigrationRunner:
     """Apply the complete known migration set in one transaction."""
 

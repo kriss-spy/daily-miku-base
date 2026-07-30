@@ -1,5 +1,7 @@
 # Recording Selection Day
 
+> **Superseded on 2026-07-27 by [ADR 0001](../adr/0001-store-selection-dates-in-raindrop-tags.md).** V2 now records the explicit Selection Day in a canonical `daily-miku-YYYY-MM-DD` Raindrop tag and does not use a Selection Ledger. This document remains as historical research explaining why a generic `daily-miku` tag could not provide an exact date.
+
 Research for [Determine how to record Selection Day](https://github.com/kriss-spy/daily-miku-base/issues/4), conducted 2026-07-17.
 
 ## Decision
