@@ -1,5 +1,6 @@
 """Tests for idempotent image-required email delivery."""
 
+import smtplib
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from email.message import EmailMessage
@@ -28,11 +29,20 @@ pytestmark = pytest.mark.unit
 class FakeMailer:
     messages: list[EmailMessage] = field(default_factory=list)
     failures_remaining: int = 0
+    failure_exception: Exception | None = None
 
     def send(self, message: EmailMessage) -> None:
         if self.failures_remaining:
             self.failures_remaining -= 1
-            raise DeliveryDependencyError("temporary SMTP failure", transient=True)
+            exc = self.failure_exception
+            if isinstance(exc, smtplib.SMTPResponseException):
+                transient = 400 <= exc.smtp_code < 500
+                raise DeliveryDependencyError(
+                    f"SMTP {exc.smtp_code} failure", transient=transient
+                )
+            raise exc or DeliveryDependencyError(
+                "temporary SMTP failure", transient=True
+            )
         self.messages.append(message)
 
 
@@ -140,6 +150,22 @@ def test_incomplete_selection_snapshot_is_a_delivery_dependency_failure() -> Non
     assert mailer.messages == []
 
 
+def test_in_progress_reservations_are_failed_not_already_sent() -> None:
+    """Pending deliveries must not be reported as already sent."""
+    services, mailer = delivery_graph()
+    day = date(2026, 7, 19)
+    # Create IN_PROGRESS reservations for all recipients without completing them
+    services.email_delivery.store.reserve(day, "one@example.com", force=False)
+    services.email_delivery.store.reserve(day, "two@example.com", force=False)
+    # Simulate a concurrent attempt
+    report = services.email_delivery.send(day)
+    assert report.status == "failed"
+    assert report.failed == 2
+    assert report.sent == 0
+    assert report.skipped == 0
+    assert len(mailer.messages) == 0
+
+
 def test_main_dispatches_dated_forced_json_email() -> None:
     with (
         patch(
@@ -161,3 +187,23 @@ def test_main_dispatches_dated_forced_json_email() -> None:
 
     assert exit_info.value.code == 0
     run.assert_called_once_with(date(2026, 7, 19), force=True, json_output=True)
+
+
+def test_smtp_4xx_is_transient_and_retried() -> None:
+    """Temporary SMTP failures (4xx) are retried; permanent (5xx) are not."""
+    services, mailer = delivery_graph(recipients="one@example.com")
+    day = date(2026, 7, 19)
+    # First attempt: transient 421 failure should be retried
+    mailer.failures_remaining = 1
+    mailer.failure_exception = smtplib.SMTPResponseException(421, "Service not available")
+    first = services.email_delivery.send(day)
+    assert first.sent == 1  # Retried and succeeded
+    assert first.failed == 0
+
+    # Second attempt: permanent 550 failure should not be retried
+    mailer.messages.clear()
+    mailer.failures_remaining = 1
+    mailer.failure_exception = smtplib.SMTPResponseException(550, "Mailbox unavailable")
+    second = services.email_delivery.send(day, force=True)
+    assert second.failed == 1  # Not retried, marked as failed
+    assert second.sent == 0

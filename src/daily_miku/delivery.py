@@ -188,7 +188,7 @@ class SMTPMailer:
                 server.send_message(message)
         except (OSError, smtplib.SMTPException) as exc:
             transient = isinstance(exc, OSError) or (
-                isinstance(exc, smtplib.SMTPResponseException) and exc.smtp_code >= 500
+                isinstance(exc, smtplib.SMTPResponseException) and 400 <= exc.smtp_code < 500
             )
             raise DeliveryDependencyError(
                 "SMTP delivery failed", transient=transient
@@ -262,8 +262,11 @@ class EmailDelivery:
         sent = skipped = failed = 0
         for recipient in self.recipients:
             reservation = self.store.reserve(day, recipient, force=force)
-            if reservation.kind is not ReservationKind.RESERVED:
+            if reservation.kind is ReservationKind.ALREADY_SENT:
                 skipped += 1
+                continue
+            if reservation.kind is ReservationKind.IN_PROGRESS:
+                failed += 1
                 continue
             message = _message(
                 self.sender, recipient, slot.items[0], day, image_bytes, content_type

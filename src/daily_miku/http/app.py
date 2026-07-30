@@ -443,7 +443,8 @@ def create_app(
         if resolution.kind is ImageResolutionKind.REDIRECT:
             response = RedirectResponse(resolution.location or "", status_code=307)
             response.headers["Cache-Control"] = mutable_cache
-            response.headers["ETag"] = f'"sha256-{resolution.digest}"'
+            if resolution.digest:
+                response.headers["ETag"] = f'"sha256-{resolution.digest}"'
             return response
         status, code, message, cache = {
             ImageResolutionKind.NO_IMAGE: (
@@ -541,12 +542,13 @@ def create_app(
     @app.get("/search", response_class=HTMLResponse)
     def search_page(request: Request) -> Response:
         query = request.query_params.get("q", "")
+        cursor = request.query_params.get("cursor")
         if not query.strip():
             return templates.TemplateResponse(
                 request, "search.html", {"query": query, "page": None}
             )
         try:
-            page = resolved_services.catalog.search(query)
+            page = resolved_services.catalog.search(query, cursor=cursor)
         except ContentDependencyError as exc:
             return content_error_response(request, exc)
         return templates.TemplateResponse(

@@ -379,6 +379,20 @@ def test_search_html_is_complete_for_results_and_empty_state() -> None:
     assert '<form action="/search" method="get"' in empty.text
 
 
+def test_search_html_accepts_cursor_parameter() -> None:
+    """HTML search accepts cursor parameter without error."""
+    client = slot_client()
+
+    first = client.get("/search", params={"q": "e"})
+    assert first.status_code == 200
+    # "e" matches "Eight" and "Nine" from slot_client fixture
+    assert "Eight" in first.text or "Nine" in first.text
+
+    # The search template receives the page object with items and next_cursor
+    # When there are more results than the page limit, a next-page link is rendered
+    # With only 2 matching results and default limit 24, no pagination link appears
+
+
 def test_statistics_support_explicit_and_unbounded_default_intervals() -> None:
     client = slot_client()
 

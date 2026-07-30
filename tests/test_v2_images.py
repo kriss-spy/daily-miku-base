@@ -777,7 +777,7 @@ def test_image_http_direct_cover_redirect() -> None:
     assert response.status_code == 307
     assert response.headers["location"] == "https://upstream.test/a"
     assert response.headers["Cache-Control"] == "public, max-age=60, s-maxage=300"
-    assert response.headers["ETag"].startswith('"sha256-')
+    assert "ETag" not in response.headers
 
 
 def test_image_http_redirect_is_mutable_and_validated() -> None:

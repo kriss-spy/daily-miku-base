@@ -27,6 +27,7 @@
           {% endfor %}
         </ol>
         {% else %}<p class="empty-result">No Daily Slots match this search.</p>{% endif %}
+        {% if page.next_cursor %}<a class="next-page" href="/search?q={{ query|urlencode }}&cursor={{ page.next_cursor }}">More results</a>{% endif %}
       {% endif %}
     </main>
   </body>

@@ -11,15 +11,13 @@ def main() -> None:
     if len(sys.argv) < 2:
         print("Usage: daily-miku <command> [args]")
         print("\nCommands:")
-        print("  slot today|get DATE  Read a Daily Slot")
-        print("  selection initialize  Initialize canonical dated tags")
+        print("  slot today|get DATE    Read a Daily Slot")
+        print("  email send [--date DATE] [--force]  Send daily miku via email")
+        print("  archive list [--cursor CURSOR] [--limit N]  List Daily Slot archive")
+        print("  doctor                 Run health checks")
         print("  image ingest|withdraw  Manage controlled images")
-        print("  fetch-today          Fetch today's daily miku")
-        print("  fetch-date <date>    Fetch daily miku for specific date (YYYY-MM-DD)")
-        print("  test-connection      Test Raindrop.io API connection")
-        print("  list [n]             List recent bookmarks (default: 10)")
-        print("  send-email           Send today's daily miku via email")
-        print("  serve                Start API server (development)")
+        print("  selection initialize   Initialize canonical dated tags (admin)")
+        print("  serve                  Start API server (development)")
         sys.exit(1)
 
     command = sys.argv[1]
