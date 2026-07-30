@@ -323,18 +323,57 @@ def _message(
     title = str(getattr(item, "title"))
     excerpt = getattr(item, "excerpt")
     source = getattr(item, "source_url")
+    page_url = f"https://dailymiku.dev/{day.isoformat()}"
+
+    # Plain text
     plain = f"Daily Miku for {day.isoformat()}\n\n{title}"
     if excerpt:
         plain += f"\n\n{excerpt}"
     if source:
         plain += f"\n\nSource: {source}"
-    body = f"<h1>{html.escape(title)}</h1><p>Selection Day: {day.isoformat()}</p>"
+    plain += f"\n\nView on dailymiku.dev: {page_url}"
+
+    # HTML body with responsive styling
+    safe_title = html.escape(title)
+    safe_excerpt = html.escape(str(excerpt)) if excerpt else ""
+    safe_source = html.escape(str(source), quote=True) if source else ""
+    safe_source_label = html.escape(
+        str(getattr(item, "domain", None) or "Original artwork")
+    )
+
+    body = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }}
+h1 {{ font-size: 1.5em; margin-bottom: 0.2em; }}
+.meta {{ color: #666; font-size: 0.9em; margin-bottom: 1em; }}
+.description {{ background: #f8f9fa; padding: 12px; border-radius: 8px; margin: 1em 0; }}
+.artwork {{ margin: 1.5em 0; text-align: center; }}
+.artwork img {{ max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }}
+.source {{ margin-top: 1em; }}
+.footer {{ margin-top: 2em; padding-top: 1em; border-top: 1px solid #eee; font-size: 0.85em; color: #666; text-align: center; }}
+.footer a {{ color: #0066cc; text-decoration: none; }}
+</style>
+</head>
+<body>
+<h1>{safe_title}</h1>
+<p class="meta">Selection Day: {day.isoformat()}</p>
+"""
     if excerpt:
-        body += f"<p>{html.escape(str(excerpt))}</p>"
+        body += f'<div class="description">{safe_excerpt}</div>\n'
+    body += '<div class="artwork"><img src="cid:daily-miku" alt="Daily Miku artwork"></div>\n'
     if source:
-        safe_source = html.escape(str(source), quote=True)
-        body += f'<p><a href="{safe_source}">Source</a></p>'
-    body += '<img src="cid:daily-miku" alt="Daily Miku artwork">'
+        body += f'<p class="source">Source: <a href="{safe_source}">{safe_source_label}</a></p>\n'
+    body += f"""<div class="footer">
+<p><a href="{page_url}">View this daily miku on dailymiku.dev</a></p>
+<p>Daily Miku — One selection, one calendar day</p>
+</div>
+</body>
+</html>"""
+
     message = EmailMessage()
     message["Subject"] = f"Daily Miku - {day.isoformat()}"
     message["From"] = sender
