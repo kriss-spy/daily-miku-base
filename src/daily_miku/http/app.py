@@ -549,6 +549,8 @@ def create_app(
             )
         try:
             page = resolved_services.catalog.search(query, cursor=cursor)
+        except InvalidCursor as exc:
+            return error_response(request, 400, "search_invalid", message=str(exc))
         except ContentDependencyError as exc:
             return content_error_response(request, exc)
         return templates.TemplateResponse(

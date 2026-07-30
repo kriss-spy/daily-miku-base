@@ -393,6 +393,19 @@ def test_search_html_accepts_cursor_parameter() -> None:
     # With only 2 matching results and default limit 24, no pagination link appears
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "/search?q=e&cursor=bad",
+        "/search?q=e&cursor=%25%25%25%25",
+    ],
+)
+def test_search_html_rejects_invalid_cursors(url: str) -> None:
+    """HTML search returns 400 for malformed or expired cursors."""
+    response = slot_client().get(url)
+    assert response.status_code == 400
+
+
 def test_statistics_support_explicit_and_unbounded_default_intervals() -> None:
     client = slot_client()
 
